@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title><%= group.name %> | Group Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #groupInfoPanel {
+      width: 0;
+      transition: width 0.3s ease;
+      overflow: hidden;
+    }
+    #groupInfoPanel.open {
+      width: 320px;
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen">
+  <!-- HEADER -->
+  <header class="flex items-center justify-between p-4 bg-white shadow cursor-pointer" id="groupHeader">
+    <div class="flex items-center space-x-3">
+      <img src="<%= group.icon || '/group_icons/default.png' %>" class="w-10 h-10 rounded-full">
+      <div>
+        <h1 class="text-lg font-semibold"><%= group.name %></h1>
+        <p class="text-xs text-gray-500"><%= group.members.length %> members</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <div class="flex flex-1 overflow-hidden">
+    <!-- CHAT BOX -->
+    <main id="chatBox" class="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-50">
+      <% chats.forEach(chat => { %>
+        <div class="<%= chat.from._id.toString() === currentUser._id.toString() ? 'text-right' : '' %>">
+          <div class="inline-block max-w-sm rounded-lg p-3 shadow <%= chat.from._id.toString() === currentUser._id.toString() ? 'bg-blue-500 text-white rounded-br-none' : 'bg-white text-gray-900 rounded-bl-none' %>">
+            <% if (chat.media) { %>
+              <% if (/\.(jpg|jpeg|png|gif)$/i.test(chat.media)) { %>
+                <img src="<%= chat.media %>" class="max-w-xs rounded mb-2" alt="image">
+              <% } else if (/\.(mp4|webm|ogg)$/i.test(chat.media)) { %>
+                <video controls class="max-w-xs rounded mb-2">
+                  <source src="<%= chat.media %>">
+                </video>
+              <% } else if (/\.(mp3|wav)$/i.test(chat.media)) { %>
+                <audio controls class="mb-2">
+                  <source src="<%= chat.media %>">
+                </audio>
+              <% } else { %>
+                <div class="flex items-center justify-between bg-gray-100 p-3 rounded mb-2">
+                  <div class="flex items-center space-x-2">
+                    <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <div class="text-sm text-left">
+                      <div class="font-semibold text-gray-800">Document</div>
+                      <div class="text-xs text-gray-500 break-all"><%= chat.media.split('/').pop() %></div>
+                    </div>
+                  </div>
+                  <div class="flex gap-2">
+                    <a href="<%= chat.media %>" target="_blank" class="text-blue-600 text-sm hover:underline">Open</a>
+                    <a href="<%= chat.media %>" download class="text-blue-600 text-sm hover:underline">Download</a>
+                  </div>
+                </div>
+              <% } %>
+            <% } %>
+
+            <% if(chat.msg) { %>
+              <p class="break-words"><strong><%= chat.from.username %>: </strong><%= chat.msg %></p>
+            <% } %>
+
+            <% if(chat.edited) { %>
+              <span class="text-xs italic"> (edited) </span>
+            <% } %>
+            <div class="text-right">
+              <span class="text-xs opacity-70">
+                <%= new Date(chat.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) %>
+              </span>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    </main>
+
+    <!-- GROUP INFO PANEL -->
+    <aside id="groupInfoPanel" class="bg-white border-l shadow-lg">
+      <div class="p-4 flex flex-col items-center">
+        <img src="<%= group.icon || '/group_icons/default.png' %>" class="w-20 h-20 rounded-full">
+        <h2 class="text-lg font-semibold mt-2"><%= group.name %></h2>
+        <p class="text-sm text-gray-500"><%= group.members.length %> Members</p>
+        <hr class="my-4 w-full">
+        <ul class="w-full">
+          <% group.members.forEach(member => { %>
+            <li class="py-2 border-b text-center"><%= member.username %></li>
+          <% }) %>
+        </ul>
+        <% if (group.admin._id.toString() === currentUser._id.toString()) { %>
+        <form action="/groups/<%= group._id %>/update" method="POST" enctype="multipart/form-data" class="w-full mt-4 space-y-2">
+          <input type="text" name="name" placeholder="New Group Name" class="border p-2 w-full rounded">
+          <input type="file" name="icon" class="border p-2 w-full rounded">
+          <button class="w-full bg-blue-500 text-white py-2 rounded">Update</button>
+        </form>
+        <% } %>
+      </div>
+    </aside>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="p-4 bg-white shadow flex space-x-2">
+    <form id="chatForm" enctype="multipart/form-data" class="flex w-full space-x-2">
+      <input type="file" name="media" id="mediaInput" class="hidden">
+      <label for="mediaInput" class="bg-gray-200 p-2 rounded cursor-pointer">+</label>
+      <input type="text" name="msg" placeholder="Type message" class="flex-1 border p-2 rounded">
+      <button type="submit" class="bg-blue-600 text-white px-4 rounded">Send</button>
+    </form>
+  </footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const groupId = "<%= group._id %>";
+    socket.emit('joinGroup', groupId);
+
+    const form = document.getElementById('chatForm');
+    const chatBox = document.getElementById('chatBox');
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      await fetch('/groupchat/' + groupId, { method: 'POST', body: formData });
+      form.reset();
+    });
+
+    socket.on('group message', msg => {
+      const div = document.createElement('div');
+      const isMine = msg.from._id === "<%= currentUser._id %>";
+      let mediaHTML = '';
+      if(msg.media){
+        if(/\.(jpg|jpeg|png|gif)$/i.test(msg.media)){
+          mediaHTML = '<img src="'+msg.media+'" class="max-w-xs rounded mb-2">';
+        } else if(/\.(mp4|webm|ogg)$/i.test(msg.media)){
+          mediaHTML = '<video controls class="max-w-xs rounded mb-2"><source src="'+msg.media+'"></video>';
+        } else if(/\.(mp3|wav)$/i.test(msg.media)){
+          mediaHTML = '<audio controls class="mb-2"><source src="'+msg.media+'"></audio>';
+        } else {
+          mediaHTML = `
+            <div class='flex items-center justify-between bg-gray-100 p-3 rounded mb-2'>
+              <div class='flex items-center space-x-2'>
+                <svg class='w-6 h-6 text-gray-600' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                  <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 4v16m8-8H4' />
+                </svg>
+                <div class='text-sm text-left'>
+                  <div class='font-semibold text-gray-800'>Document</div>
+                  <div class='text-xs text-gray-500 break-all'>${msg.media.split('/').pop()}</div>
+                </div>
+              </div>
+              <div class='flex gap-2'>
+                <a href='${msg.media}' target='_blank' class='text-blue-600 text-sm hover:underline'>Open</a>
+                <a href='${msg.media}' download class='text-blue-600 text-sm hover:underline'>Download</a>
+              </div>
+            </div>`;
+        }
+      }
+      div.innerHTML = `
+        <div class="${isMine ? 'text-right' : ''}">
+          <div class="inline-block max-w-sm rounded-lg p-3 shadow ${isMine ? 'bg-blue-500 text-white rounded-br-none' : 'bg-white text-gray-900 rounded-bl-none'}">
+            ${mediaHTML}
+            ${msg.msg ? '<p><strong>'+msg.from.username+':</strong> '+msg.msg+'</p>' : ''}
+            ${msg.edited ? '<span class="text-xs italic"> (edited) </span>' : ''}
+            <div class="text-right"><span class="text-xs opacity-70">${new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
+          </div>
+        </div>`;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+
+    document.getElementById('groupHeader').addEventListener('click', () => {
+      document.getElementById('groupInfoPanel').classList.toggle('open');
+    });
+  </script>
+</body>
+</html>

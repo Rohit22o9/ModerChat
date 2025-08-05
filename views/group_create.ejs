@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Create Group</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="p-6 bg-gray-100">
+  <h1 class="text-xl font-bold mb-4">Create New Group</h1>
+  <form action="/groups/create" method="POST" enctype="multipart/form-data" class="space-y-4 bg-white p-6 rounded shadow">
+    <div>
+      <label class="block font-medium mb-1">Group Name</label>
+      <input type="text" name="name" required class="border p-2 w-full rounded">
+    </div>
+    <div>
+      <label class="block font-medium mb-1">Group Icon</label>
+      <input type="file" name="icon" accept="image/*" class="border p-2 w-full rounded">
+    </div>
+    <div>
+      <label class="block font-medium mb-1">Select Members</label>
+      <div class="space-y-2">
+        <% users.forEach(user => { %>
+          <label class="flex items-center space-x-2">
+            <input type="checkbox" name="members" value="<%= user._id %>">
+            <span><%= user.username %></span>
+          </label>
+        <% }) %>
+      </div>
+    </div>
+    <button class="bg-blue-600 text-white px-4 py-2 rounded">Create Group</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Your Groups</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <header class="p-4 bg-white shadow flex justify-between items-center">
+    <h1 class="text-xl font-bold">Your Groups</h1>
+    <a href="/dashboard" class="text-blue-600 hover:underline">Back to Dashboard</a>
+  </header>
+
+  <main class="max-w-4xl mx-auto mt-8">
+    <% if (groups.length > 0) { %>
+      <div class="space-y-4">
+        <% groups.forEach(group => { %>
+          <div class="bg-white p-4 rounded shadow flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+              <img src="<%= group.icon || '/group_icons/default.png' %>" 
+                   alt="<%= group.name %>"
+                   class="w-12 h-12 rounded-full object-cover border">
+              <div>
+                <h2 class="text-lg font-semibold"><%= group.name %></h2>
+                <p class="text-sm text-gray-500"><%= group.members.length %> Members</p>
+              </div>
+            </div>
+            <a href="/groups/<%= group._id %>" 
+               class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Open</a>
+          </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="text-center py-12 bg-white rounded shadow">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                d="M7 8h10M7 12h4m1 8h5a2 2 0 002-2v-5a2 2 0 00-2-2h-5a2 2 0 00-2 2v5a2 2 0 002 2zm3-10V6a2 2 0 012-2h2a2 2 0 012 2v2"></path>
+        </svg>
+        <h3 class="mt-2 text-lg font-semibold">No Groups Found</h3>
+        <p class="mt-1 text-gray-500">You are not part of any groups yet.</p>
+        <a href="/groups/create" 
+           class="mt-4 inline-block bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Create Group</a>
+      </div>
+    <% } %>
+  </main>
+</body>
+</html>

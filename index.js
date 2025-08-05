@@ -13,6 +13,9 @@ const multer = require('multer');
 const fs = require('fs');
 require('dotenv').config();
 const { decrypt } = require('./utils/crypto');
+const Group = require('./models/group');
+const GroupChat = require('./models/groupChat');
+
 
 // ----------- DATABASE CONNECTION -----------
 mongoose.connect(process.env.MONGO_URI, {
@@ -61,6 +64,15 @@ const mediaStorage = multer.diskStorage({
 });
 const mediaUpload = multer({ storage: mediaStorage });
 
+const groupIconStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = path.join(__dirname, 'public', 'group_icons');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+});
+const groupIconUpload = multer({ storage: groupIconStorage });
 // ----------- ROUTES -----------
 app.get('/', (req, res) => res.redirect('/login'));
 
@@ -115,7 +127,14 @@ app.get('/dashboard', async (req, res) => {
     const decryptedUsers = users.map(u => u.getDecrypted());
     const decryptedCurrentUser = currentUser.getDecrypted();
 
-    res.render('dashboard', { users: decryptedUsers, currentUser: decryptedCurrentUser });
+    // Fetch groups for current user
+    const groups = await Group.find({ members: req.session.userId });
+
+    res.render('dashboard', { 
+        users: decryptedUsers, 
+        currentUser: decryptedCurrentUser,
+        groups // send groups to frontend
+    });
 });
 
 app.post('/startchat', async (req, res) => {
@@ -269,6 +288,87 @@ app.put('/message/:messageId', async (req, res) => {
     }
 });
 
+//Group routes
+// GET groups list
+app.get('/groups', async (req, res) => {
+    if (!req.session.userId) return res.redirect('/login');
+    const groups = await Group.find({ members: req.session.userId }).populate('admin').populate('members');
+    res.render('groups_list', { groups, currentUser: await User.findById(req.session.userId) });
+});
+
+// GET create group page
+app.get('/groups/create', async (req, res) => {
+    if (!req.session.userId) return res.redirect('/login');
+    const users = await User.find({ _id: { $ne: req.session.userId } });
+    res.render('group_create', { users, currentUser: await User.findById(req.session.userId) });
+});
+
+// POST create group
+app.post('/groups/create', groupIconUpload.single('icon'), async (req, res) => {
+    if (!req.session.userId) return res.redirect('/login');
+    const { name, members } = req.body;
+    const icon = req.file ? `/group_icons/${req.file.filename}` : null;
+    const memberArray = Array.isArray(members) ? members : [members];
+    const group = await Group.create({
+        name,
+        icon,
+        admin: req.session.userId,
+        members: [req.session.userId, ...memberArray]
+    });
+    res.redirect(`/groups/${group._id}`);
+});
+
+// GET group chat page
+app.get('/groups/:id', async (req, res) => {
+    if (!req.session.userId) return res.redirect('/login');
+    const group = await Group.findById(req.params.id).populate('members').populate('admin');
+    if (!group.members.some(m => m._id.equals(req.session.userId))) return res.send('Not authorized');
+
+    const chats = await GroupChat.find({ group: group._id }).populate('from').sort({ created_at: 1 });
+    res.render('group_chat', { group, chats, currentUser: await User.findById(req.session.userId) });
+});
+
+// POST send group message
+app.post('/groupchat/:id', mediaUpload.single('media'), async (req, res) => {
+    const from = req.session.userId;
+    const msg = req.body.msg || '';
+    const media = req.file ? `/media/${req.file.filename}` : null;
+
+    const newChat = await GroupChat.create({ group: req.params.id, from, msg, media });
+    const populatedChat = await newChat.populate('from');
+    io.to(`group_${req.params.id}`).emit('group message', populatedChat);
+    res.json(populatedChat);
+});
+
+// POST add member (admin only)
+app.post('/groups/:id/add', async (req, res) => {
+    const group = await Group.findById(req.params.id);
+    if (!group.admin.equals(req.session.userId)) return res.send('Not authorized');
+    group.members.push(req.body.userId);
+    await group.save();
+    res.redirect(`/groups/${req.params.id}`);
+});
+
+// POST remove member (admin only)
+app.post('/groups/:id/remove', async (req, res) => {
+    const group = await Group.findById(req.params.id);
+    if (!group.admin.equals(req.session.userId)) return res.send('Not authorized');
+    group.members = group.members.filter(m => m.toString() !== req.body.userId);
+    await group.save();
+    res.redirect(`/groups/${req.params.id}`);
+});
+
+// POST update group name/icon (admin only)
+app.post('/groups/:id/update', groupIconUpload.single('icon'), async (req, res) => {
+    const group = await Group.findById(req.params.id);
+    if (!group.admin.equals(req.session.userId)) return res.send('Not authorized');
+    if (req.body.name) group.name = req.body.name;
+    if (req.file) group.icon = `/group_icons/${req.file.filename}`;
+    await group.save();
+    res.redirect(`/groups/${req.params.id}`);
+});
+
+
 app.get('/logout', (req, res) => req.session.destroy(() => res.redirect('/login')));
 
 // ----------- SOCKET.IO -------------
@@ -283,6 +383,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('joinRoom', (roomId) => socket.join(roomId));
+    socket.on('joinGroup', (groupId) => socket.join(`group_${groupId}`));
 
     socket.on('message delivered', async ({ messageId }) => {
         try { await Chat.findByIdAndUpdate(messageId, { status: 'delivered' }); } 
