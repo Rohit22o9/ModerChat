@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with <%= otherUser.username %> | ModernChat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/style.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff', 100: '#dbeafe',
+                            500: '#3b82f6', 600: '#2563eb',
+                            700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a',
+                        },
+                        secondary: {
+                            50: '#f8fafc', 100: '#f1f5f9',
+                            500: '#64748b', 600: '#475569',
+                            700: '#334155', 800: '#1e293b', 900: '#0f172a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .message-container {
+            position: relative;
+        }
+        .message-menu {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            pointer-events: none;
+        }
+        .message-container:hover .message-menu {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .dropdown-menu {
+            position: absolute;
+            right: 0;
+            top: 100%;
+            z-index: 50;
+            min-width: 160px;
+            transform: translateY(-10px);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+        }
+        .dropdown-menu.show {
+            transform: translateY(0);
+            opacity: 1;
+            visibility: visible;
+        }
+        .edit-input {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            width: 100%;
+            font-size: 0.875rem;
+        }
+        .edit-buttons {
+            margin-top: 0.5rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .deleted-message {
+            opacity: 0.5;
+            font-style: italic;
+            background: #f3f4f6 !important;
+            color: #6b7280 !important;
+        }
+    </style>
+</head>
+
+<body class="h-screen bg-gradient-to-br from-secondary-50 via-white to-primary-50 overflow-hidden">
+    <div class="h-full flex flex-col">
+        <!-- Header -->
+        <header class="bg-white/90 backdrop-blur-lg border-b border-secondary-200 px-4 py-3 flex-shrink-0">
+            <div class="flex items-center space-x-4">
+                <form action="/dashboard" method="GET" class="inline">
+                    <button type="submit" class="p-2 rounded-lg hover:bg-secondary-100 transition-colors duration-200">
+                        <svg class="h-5 w-5 text-secondary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                        </svg>
+                    </button>
+                </form>
+                <div class="flex items-center space-x-3">
+                    <img src="/avatars/<%= otherUser.avatar || 'default-avatar.png' %>" 
+                        alt="<%= otherUser.username %>" 
+                        class="w-10 h-10 rounded-full object-cover border-2 border-white shadow-md">
+                    <div>
+                        <h1 class="text-lg font-semibold text-secondary-900"><%= otherUser.username %></h1>
+                        <p id="user-status" class="text-xs font-medium <%= otherUser.online ? 'text-green-600' : 'text-gray-500' %>">
+                            <%= otherUser.online ? 'Online' : 'Offline' %>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Chat Messages -->
+        <main class="flex-1 overflow-y-auto p-4 space-y-4" id="chatBox">
+            <% chats.forEach(chat => { %>
+                <div class="flex <%= chat.from.toString() === currentUser._id.toString() ? 'justify-end' : 'justify-start' %>" data-id="<%= chat._id %>">
+                    <div class="message-container relative">
+                        <div class="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl 
+                                    <%= chat.from.toString() === currentUser._id.toString() 
+                                        ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-br-md' 
+                                        : 'bg-white/80 backdrop-blur-lg text-secondary-900 rounded-bl-md border border-white/20' %> shadow-lg">
+                            <% if (chat.media) { 
+    const ext = chat.media.split('.').pop().toLowerCase();
+    const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
+%>
+    <% if (isImage) { %>
+    <div class="mb-2">
+        <img src="<%= chat.media.startsWith('/') ? chat.media : '/' + chat.media %>" 
+             alt="Media" class="rounded-md max-h-60 shadow">
+    </div>
+<% } else { 
+    const extColor =
+        ext === 'pdf' ? 'text-red-500' :
+        ['doc','docx'].includes(ext) ? 'text-blue-600' :
+        ['xls','xlsx'].includes(ext) ? 'text-green-600' :
+        ['ppt','pptx'].includes(ext) ? 'text-orange-500' :
+        ['zip','rar'].includes(ext) ? 'text-yellow-500' :
+        'text-gray-600';
+%>
+    <div class="bg-gray-100 rounded-md p-3 mb-2 shadow flex flex-col space-y-2">
+        <div class="flex items-center space-x-3">
+            <svg class="w-6 h-6 <%= extColor %>" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M12 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="12 2 12 8 18 8"/>
+            </svg>
+            <div>
+                <p class="font-semibold text-gray-800 text-sm truncate max-w-xs">
+                    <%= chat.originalName || chat.media.split('/').pop() %>
+                </p>
+                <p class="text-xs text-gray-500 uppercase">DOCUMENT</p>
+            </div>
+        </div>
+        <div class="flex space-x-3 mt-1">
+            <a href="<%= chat.media.startsWith('/') ? chat.media : '/' + chat.media %>" target="_blank" 
+               class="text-xs px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Open</a>
+            <a href="<%= chat.media.startsWith('/') ? chat.media : '/' + chat.media %>" download 
+               class="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600">Download</a>
+        </div>
+    </div>
+<% } %>
+
+<% } %>
+
+                            <% if (chat.msg) { %>
+                                <div class="message-text">
+                                    <p class="text-sm leading-relaxed"><%= chat.msg %></p>
+                                </div>
+                            <% } %>
+                            <div class="flex items-center justify-between mt-2">
+                                <span class="text-xs <%= chat.from.toString() === currentUser._id.toString() ? 'text-primary-100' : 'text-secondary-500' %>">
+                                    <%= new Date(chat.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) %>
+                                    <% if (chat.edited) { %>
+                                        <span class="ml-1 italic">(edited)</span>
+                                    <% } %>
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <!-- Message Menu (only show for current user's messages) -->
+                        <% if (chat.from.toString() === currentUser._id.toString()) { %>
+                            <div class="message-menu absolute -right-2 top-2">
+                                <button class="menu-trigger p-1 rounded-full hover:bg-gray-200 hover:bg-opacity-50" onclick="toggleMenu(this)">
+                                    <svg class="h-4 w-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                                    </svg>
+                                </button>
+                                <div class="dropdown-menu bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+                                    <% if (chat.msg) { %>
+                                        <button onclick="editMessage('<%= chat._id %>')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                                            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                            </svg>
+                                            Edit Message
+                                        </button>
+                                    <% } %>
+                                    <button onclick="deleteMessage('<%= chat._id %>', 'forMe')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                                        <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        Delete for Me
+                                    </button>
+                                    <button onclick="deleteMessage('<%= chat._id %>', 'forEveryone')" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center">
+                                        <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        Delete for Everyone
+                                    </button>
+                                </div>
+                            </div>
+                        <% } %>
+                    </div>
+                </div>
+            <% }) %>
+        </main>
+
+        <!-- Media Preview -->
+        <div id="filePreview" class="hidden flex items-center justify-between p-2 bg-gray-100 rounded-md mx-4 mb-2">
+            <div id="previewContent" class="flex items-center space-x-3"></div>
+            <button id="removeFile" type="button" class="text-red-500 font-bold text-lg">&times;</button>
+        </div>
+
+        <!-- Message Input -->
+        <footer class="bg-white/90 backdrop-blur-lg border-t border-secondary-200 p-4 flex-shrink-0">
+            <form id="chatForm" enctype="multipart/form-data" class="flex items-center space-x-3">
+                <input type="file" name="media"  class="hidden" id="mediaInput">
+                <label for="mediaInput" class="cursor-pointer p-3 rounded-xl bg-secondary-100 hover:bg-secondary-200 transition">
+                    <svg class="h-5 w-5 text-secondary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
+                    </svg>
+                </label>
+                <div class="flex-1 relative">
+                    <input type="text" name="msg" placeholder="Type your message..." class="w-full px-4 py-3 bg-secondary-50 border border-secondary-200 rounded-2xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 pr-12" autocomplete="off">
+                </div>
+                <button type="submit" class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </button>
+            </form>
+        </footer>
+    </div>
+    <style>
+  body, html {
+    overflow-x: hidden;
+  }
+
+  .chat-messages {
+    overflow-x: hidden;
+    word-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .document-message {
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+  }
+
+  .document-message .btn-group {
+    flex-wrap: wrap;
+  }
+</style>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const currentUserId = "<%= currentUser._id %>";
+        const otherUserId = "<%= otherUser._id %>";
+        const roomId = [currentUserId, otherUserId].sort().join('_');
+        const chatBox = document.getElementById('chatBox');
+        const form = document.getElementById('chatForm');
+        const msgInput = form.querySelector('input[name="msg"]');
+        const mediaInput = document.getElementById('mediaInput');
+        const statusElem = document.getElementById('user-status');
+
+        const mediaPreview = document.getElementById('mediaPreview');
+        const previewImage = document.getElementById('previewImage');
+        const removePreview = document.getElementById('removePreview');
+
+        socket.emit('userOnline', currentUserId);
+        socket.emit('joinRoom', roomId);
+        socket.emit('messages seen', { from: otherUserId, to: currentUserId });
+
+        function scrollToBottom() { chatBox.scrollTop = chatBox.scrollHeight; }
+        scrollToBottom();
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.message-menu')) {
+                document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
+
+        // Toggle dropdown menu
+        function toggleMenu(button) {
+            const dropdown = button.nextElementSibling;
+            const isShown = dropdown.classList.contains('show');
+            
+            // Close all other dropdowns
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                menu.classList.remove('show');
+            });
+            
+            // Toggle current dropdown
+            if (!isShown) {
+                dropdown.classList.add('show');
+            }
+        }
+
+        // Delete message function - FIXED VERSION
+        async function deleteMessage(messageId, deleteType) {
+            try {
+                const response = await fetch(`/message/${messageId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ deleteType })
+                });
+
+                if (response.ok) {
+                    // Close dropdown after successful deletion
+                    document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                        menu.classList.remove('show');
+                    });
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.error);
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Failed to delete message');
+            }
+        }
+
+        // Edit message function
+        function editMessage(messageId) {
+            const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+            const messageTextDiv = messageContainer.querySelector('.message-text');
+            const currentText = messageTextDiv.querySelector('p').textContent;
+
+            // Replace message text with input
+            messageTextDiv.innerHTML = `
+                <input type="text" class="edit-input" value="${currentText}" onkeypress="handleEditKeypress(event, '${messageId}')" />
+                <div class="edit-buttons">
+                    <button onclick="saveEdit('${messageId}')" class="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">Save</button>
+                    <button onclick="cancelEdit('${messageId}', '${currentText}')" class="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600">Cancel</button>
+                </div>
+            `;
+
+            // Focus on input and close dropdown
+            const input = messageTextDiv.querySelector('.edit-input');
+            input.focus();
+            input.select();
+            
+            // Close dropdown
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                menu.classList.remove('show');
+            });
+        }
+
+        // Handle Enter key in edit input
+        function handleEditKeypress(event, messageId) {
+            if (event.key === 'Enter') {
+                saveEdit(messageId);
+            } else if (event.key === 'Escape') {
+                const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+                const messageTextDiv = messageContainer.querySelector('.message-text');
+                const input = messageTextDiv.querySelector('.edit-input');
+                const originalText = input.defaultValue;
+                cancelEdit(messageId, originalText);
+            }
+        }
+        
+
+        // Save edited message
+        async function saveEdit(messageId) {
+            const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+            const messageTextDiv = messageContainer.querySelector('.message-text');
+            const input = messageTextDiv.querySelector('.edit-input');
+            const newText = input.value.trim();
+
+            if (!newText) {
+                alert('Message cannot be empty');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/message/${messageId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ newMessage: newText })
+                });
+
+                if (response.ok) {
+                    // Message will be updated via socket event
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.error);
+                    // Restore original text
+                    const originalText = input.defaultValue;
+                    cancelEdit(messageId, originalText);
+                }
+            } catch (error) {
+                console.error('Edit error:', error);
+                alert('Failed to edit message');
+                // Restore original text
+                const originalText = input.defaultValue;
+                cancelEdit(messageId, originalText);
+            }
+        }
+
+        // Cancel edit
+        function cancelEdit(messageId, originalText) {
+            const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+            const messageTextDiv = messageContainer.querySelector('.message-text');
+            messageTextDiv.innerHTML = `<p class="text-sm leading-relaxed">${originalText}</p>`;
+        }
+
+        // Media preview handler
+        const filePreview = document.getElementById('filePreview');
+const previewContent = document.getElementById('previewContent');
+const removeFile = document.getElementById('removeFile');
+
+mediaInput.addEventListener('change', () => {
+    const file = mediaInput.files[0];
+    if (file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
+
+        if (isImage) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewContent.innerHTML = `<img src="${e.target.result}" class="h-16 rounded-md object-cover shadow" />`;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            const extIconColor =
+                ext === 'pdf' ? 'text-red-500' :
+                ['doc','docx'].includes(ext) ? 'text-blue-600' :
+                ['xls','xlsx'].includes(ext) ? 'text-green-600' :
+                ['ppt','pptx'].includes(ext) ? 'text-orange-500' :
+                ['zip','rar'].includes(ext) ? 'text-yellow-500' : 'text-gray-600';
+
+            previewContent.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <svg class="w-10 h-10 ${extIconColor}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M12 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <polyline points="12 2 12 8 18 8"/>
+                    </svg>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm truncate max-w-xs">${file.name}</p>
+                        <p class="text-xs text-gray-500 uppercase">${ext} Document</p>
+                    </div>
+                </div>
+            `;
+        }
+        filePreview.classList.remove('hidden');
+    } else {
+        filePreview.classList.add('hidden');
+        previewContent.innerHTML = '';
+    }
+});
+
+removeFile.addEventListener('click', () => {
+    mediaInput.value = '';
+    filePreview.classList.add('hidden');
+    previewContent.innerHTML = '';
+});
+
+
+        // Send message
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const msg = msgInput.value.trim();
+  const file = mediaInput.files[0];
+  if (!msg && !file) return;
+
+  const formData = new FormData();
+  formData.append('msg', msg);
+  if (file) formData.append('media', file);
+
+  const res = await fetch(`/chat/${otherUserId}`, {
+    method: 'POST',
+    body: formData
+  });
+
+  const data = await res.json();
+
+  // Reset input fields and hide preview
+  msgInput.value = '';
+  mediaInput.value = '';
+  mediaPreview.classList.add('hidden');
+  previewImage.src = '';
+  previewFile.innerHTML = '';
+
+  // 👇 Append the new message to the chat window
+  const messageHTML = generateMessageHTML(data.message); // write this function
+  chatMessages.insertAdjacentHTML('beforeend', messageHTML);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+});
+
+
+
+
+
+        // Receive message
+        socket.on('chat message', (data) => {
+    const isCurrentUser = data.from === currentUserId;
+    const bubbleClass = isCurrentUser 
+        ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-br-md' 
+        : 'bg-white/80 backdrop-blur-lg text-secondary-900 rounded-bl-md border border-white/20';
+
+    let mediaHTML = '';
+    if (data.media) {
+        const ext = data.media.split('.').pop().toLowerCase();
+        const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
+
+        if (isImage) {
+            mediaHTML = `
+                <div class="mb-2">
+                    <img src="${data.media}" class="rounded-md max-h-60 shadow">
+                </div>`;
+        } else {
+            const extColor =
+                ext === 'pdf' ? 'text-red-500' :
+                ['doc','docx'].includes(ext) ? 'text-blue-600' :
+                ['xls','xlsx'].includes(ext) ? 'text-green-600' :
+                ['ppt','pptx'].includes(ext) ? 'text-orange-500' :
+                ['zip','rar'].includes(ext) ? 'text-yellow-500' : 'text-gray-600';
+
+            mediaHTML = `
+                <div class="bg-gray-100 rounded-md p-3 mb-2 shadow flex flex-col space-y-2">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-10 h-10 ${extColor}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M12 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <polyline points="12 2 12 8 18 8"/>
+                        </svg>
+                        <div>
+                            <p class="font-semibold text-gray-800 text-sm truncate">${data.originalName || data.media.split('/').pop()}</p>
+                            <p class="text-xs text-gray-500 uppercase">Document</p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-3 mt-1">
+                        <a href="${data.media}" target="_blank" class="text-xs px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Open</a>
+                        <a href="${data.media}" download class="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600">Download</a>
+                    </div>
+                </div>`;
+        }
+    }
+
+    const msgHTML = `
+        <div class="flex ${isCurrentUser ? 'justify-end' : 'justify-start'}" data-id="${data._id}">
+            <div class="message-container relative">
+                <div class="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl ${bubbleClass} shadow-lg">
+                    ${mediaHTML}
+                    ${data.msg ? `<div class="message-text"><p class="text-sm leading-relaxed">${data.msg}</p></div>` : ''}
+                    <div class="flex items-center justify-between mt-2">
+                        <span class="text-xs ${isCurrentUser ? 'text-primary-100' : 'text-secondary-500'}">
+                            ${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}
+                            ${data.edited ? '<span class="ml-1 italic">(edited)</span>' : ''}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    chatBox.insertAdjacentHTML('beforeend', msgHTML);
+    scrollToBottom();
+});
+
+        // Handle message deletion - UPDATED
+        socket.on('message deleted', ({ messageId, deleteType }) => {
+            const messageElement = document.querySelector(`[data-id="${messageId}"]`);
+            if (messageElement) {
+                if (deleteType === 'forEveryone') {
+                    // Remove message completely from DOM for all users
+                    messageElement.remove();
+                } else {
+                    // For "forMe" deletion, only remove if current user made the deletion
+                    // This will only be received by the user who deleted it
+                    messageElement.remove();
+                }
+            }
+        });
+        // Handle message editing
+        socket.on('message edited', (updatedMessage) => {
+            const messageElement = document.querySelector(`[data-id="${updatedMessage._id}"]`);
+            if (messageElement) {
+                const messageTextDiv = messageElement.querySelector('.message-text');
+                const timeSpan = messageElement.querySelector('.text-xs');
+                
+                if (messageTextDiv) {
+                    messageTextDiv.innerHTML = `<p class="text-sm leading-relaxed">${updatedMessage.msg}</p>`;
+                }
+                
+                // Update timestamp to show edited
+                if (timeSpan && !timeSpan.innerHTML.includes('(edited)')) {
+                    timeSpan.innerHTML += ' <span class="ml-1 italic">(edited)</span>';
+                }
+            }
+        });
+        // User status
+        socket.on('userStatus', ({ userId, online }) => {
+            if(userId === otherUserId) {
+                statusElem.textContent = online ? 'Online' : 'Offline';
+                statusElem.className = `text-xs font-medium ${online ? 'text-green-600' : 'text-gray-500'}`;
+            }
+        });
+
+        msgInput.value = '';
+mediaInput.value = '';
+mediaPreview.classList.add('hidden');
+previewImage.src = '';
+
+// Also hide any surrounding preview container if visible
+const previewContainer = document.querySelector('.preview-container'); // Adjust selector if different
+if (previewContainer) {
+  previewContainer.classList.add('hidden');
+  previewContainer.innerHTML = ''; // Optional: remove content
+}
+
+
+
+    </script>
+</body>
+</html>
