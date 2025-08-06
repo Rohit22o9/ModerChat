@@ -250,6 +250,19 @@
 
         <!-- Chat Messages -->
         <main class="flex-1 overflow-y-auto p-4 space-y-4" id="chatBox">
+            <!-- Typing Indicator -->
+            <div id="typingIndicator" class="hidden flex justify-start">
+                <div class="bg-white/80 backdrop-blur-lg px-4 py-2 rounded-2xl rounded-bl-md border border-white/20 shadow-lg">
+                    <div class="flex items-center space-x-2">
+                        <div class="flex space-x-1">
+                            <div class="w-2 h-2 bg-secondary-400 rounded-full animate-bounce"></div>
+                            <div class="w-2 h-2 bg-secondary-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                            <div class="w-2 h-2 bg-secondary-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                        </div>
+                        <span class="text-xs text-secondary-500" id="typingText"><%= otherUser.username %> is typing...</span>
+                    </div>
+                </div>
+            </div>
             <% chats.forEach(chat => { %>
                 <div class="flex <%= chat.from.toString() === currentUser._id.toString() ? 'justify-end' : 'justify-start' %>" data-id="<%= chat._id %>">
                     <div class="message-container relative">
@@ -327,6 +340,29 @@
                                         <span class="ml-1 italic">(edited)</span>
                                     <% } %>
                                 </span>
+                                <% if (chat.from.toString() === currentUser._id.toString()) { %>
+                                    <div class="message-status flex items-center">
+                                        <% if (chat.status === 'sent') { %>
+                                            <svg class="w-4 h-4 text-primary-200" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        <% } else if (chat.status === 'delivered') { %>
+                                            <svg class="w-4 h-4 text-primary-200" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <svg class="w-4 h-4 text-primary-200 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        <% } else if (chat.status === 'seen') { %>
+                                            <svg class="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <svg class="w-4 h-4 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        <% } %>
+                                    </div>
+                                <% } %>
                             </div>
                         </div>
 
@@ -526,6 +562,11 @@
         const statusElem = document.getElementById('user-status');
         const filePreview = document.getElementById('filePreview');
         const previewContent = document.getElementById('previewContent');
+        const typingIndicator = document.getElementById('typingIndicator');
+        
+        // Typing functionality
+        let typingTimer;
+        let isTyping = false;
         const removeFile = document.getElementById('removeFile');
         const voiceMessageBtn = document.getElementById('voiceMessageBtn');
         const voiceRecordingPreview = document.getElementById('voiceRecordingPreview');
@@ -570,6 +611,42 @@
         socket.emit('joinRoom', roomId);
         socket.emit('messages seen', { from: otherUserId, to: currentUserId });
         scrollToBottom();
+
+        // Typing detection
+        msgInput.addEventListener('input', () => {
+            if (!isTyping) {
+                isTyping = true;
+                socket.emit('typing start', {
+                    from: currentUserId,
+                    to: otherUserId,
+                    username: "<%= currentUser.username %>"
+                });
+            }
+            
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => {
+                isTyping = false;
+                socket.emit('typing stop', {
+                    from: currentUserId,
+                    to: otherUserId,
+                    username: "<%= currentUser.username %>"
+                });
+            }, 1000);
+        });
+
+        msgInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                clearTimeout(typingTimer);
+                if (isTyping) {
+                    isTyping = false;
+                    socket.emit('typing stop', {
+                        from: currentUserId,
+                        to: otherUserId,
+                        username: "<%= currentUser.username %>"
+                    });
+                }
+            }
+        });
 
         // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
@@ -865,6 +942,38 @@
             }
         });
 
+        // Helper function for message status icons
+        function getMessageStatusIcon(status) {
+            switch(status) {
+                case 'sent':
+                    return `<div class="message-status flex items-center">
+                        <svg class="w-4 h-4 text-primary-200" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                    </div>`;
+                case 'delivered':
+                    return `<div class="message-status flex items-center">
+                        <svg class="w-4 h-4 text-primary-200" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        <svg class="w-4 h-4 text-primary-200 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                    </div>`;
+                case 'seen':
+                    return `<div class="message-status flex items-center">
+                        <svg class="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        <svg class="w-4 h-4 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                    </div>`;
+                default:
+                    return '';
+            }
+        }
+
         // Socket event handlers
         socket.on('chat message', (data) => {
             try {
@@ -929,6 +1038,8 @@
                     }
                 }
 
+                const statusIcon = isCurrentUser ? getMessageStatusIcon(data.status || 'sent') : '';
+                
                 const msgHTML = `
                     <div class="flex ${isCurrentUser ? 'justify-end' : 'justify-start'}" data-id="${escapeHtml(data._id)}">
                         <div class="message-container relative">
@@ -940,6 +1051,7 @@
                                         ${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}
                                         ${data.edited ? '<span class="ml-1 italic">(edited)</span>' : ''}
                                     </span>
+                                    ${statusIcon}
                                 </div>
                             </div>
                         </div>
@@ -999,6 +1111,37 @@
                 }
             } catch (error) {
                 console.error('Error handling user status:', error);
+            }
+        });
+
+        // Typing indicator
+        socket.on('user typing', ({ userId, username, isTyping }) => {
+            try {
+                if (userId === otherUserId) {
+                    if (isTyping) {
+                        typingIndicator.classList.remove('hidden');
+                        scrollToBottom();
+                    } else {
+                        typingIndicator.classList.add('hidden');
+                    }
+                }
+            } catch (error) {
+                console.error('Error handling typing status:', error);
+            }
+        });
+
+        // Message status updates
+        socket.on('message status update', ({ messageId, status }) => {
+            try {
+                const messageElement = document.querySelector(`[data-id="${messageId}"]`);
+                if (messageElement) {
+                    const statusElement = messageElement.querySelector('.message-status');
+                    if (statusElement) {
+                        statusElement.innerHTML = getMessageStatusIcon(status).replace('<div class="message-status flex items-center">', '').replace('</div>', '');
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating message status:', error);
             }
         });
 

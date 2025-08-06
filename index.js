@@ -1052,6 +1052,42 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Typing status events
+    socket.on('typing start', (data) => {
+        const roomId = [data.from, data.to].sort().join('_');
+        socket.to(roomId).emit('user typing', { 
+            userId: data.from, 
+            username: data.username,
+            isTyping: true 
+        });
+    });
+
+    socket.on('typing stop', (data) => {
+        const roomId = [data.from, data.to].sort().join('_');
+        socket.to(roomId).emit('user typing', { 
+            userId: data.from, 
+            username: data.username,
+            isTyping: false 
+        });
+    });
+
+    // Group typing events
+    socket.on('group typing start', (data) => {
+        socket.to(`group_${data.groupId}`).emit('group user typing', { 
+            userId: data.from, 
+            username: data.username,
+            isTyping: true 
+        });
+    });
+
+    socket.on('group typing stop', (data) => {
+        socket.to(`group_${data.groupId}`).emit('group user typing', { 
+            userId: data.from, 
+            username: data.username,
+            isTyping: false 
+        });
+    });
+
     // WebRTC signaling
     socket.on('call-offer', (data) => {
         socket.to(data.to).emit('call-offer', {

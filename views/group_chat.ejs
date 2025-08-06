@@ -212,6 +212,19 @@
     <div class="flex flex-1 overflow-hidden">
       <!-- Chat Messages -->
       <main class="flex-1 overflow-y-auto p-4 space-y-4 chat-messages" id="chatBox">
+        <!-- Group Typing Indicator -->
+        <div id="groupTypingIndicator" class="hidden flex justify-start">
+          <div class="bg-white/80 backdrop-blur-lg px-4 py-2 rounded-2xl rounded-bl-md border border-white/20 shadow-lg">
+            <div class="flex items-center space-x-2">
+              <div class="flex space-x-1">
+                <div class="w-2 h-2 bg-secondary-400 rounded-full animate-bounce"></div>
+                <div class="w-2 h-2 bg-secondary-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                <div class="w-2 h-2 bg-secondary-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+              </div>
+              <span class="text-xs text-secondary-500" id="groupTypingText">Someone is typing...</span>
+            </div>
+          </div>
+        </div>
         <% chats.forEach(chat => { %>
           <div class="flex <%= chat.from._id.toString() === currentUser._id.toString() ? 'justify-end' : 'justify-start' %>" data-id="<%= chat._id %>">
             <div class="message-container relative">
@@ -449,6 +462,11 @@
     const socket = io();
     const groupId = "<%= group._id %>";
     const currentUserId = "<%= currentUser._id %>";
+    const groupTypingIndicator = document.getElementById('groupTypingIndicator');
+    const groupTypingText = document.getElementById('groupTypingText');
+    const typingUsers = new Set();
+    let groupTypingTimer;
+    let isGroupTyping = false;
     
     socket.emit('joinGroup', groupId);
 
@@ -571,9 +589,58 @@
     
     scrollToBottom();
 
+    // Group typing detection
+    const msgInput = form.querySelector('input[name="msg"]');
+    
+    msgInput.addEventListener('input', () => {
+      if (!isGroupTyping) {
+        isGroupTyping = true;
+        socket.emit('group typing start', {
+          from: currentUserId,
+          groupId: groupId,
+          username: "<%= currentUser.username %>"
+        });
+      }
+      
+      clearTimeout(groupTypingTimer);
+      groupTypingTimer = setTimeout(() => {
+        isGroupTyping = false;
+        socket.emit('group typing stop', {
+          from: currentUserId,
+          groupId: groupId,
+          username: "<%= currentUser.username %>"
+        });
+      }, 1000);
+    });
+
+    msgInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(groupTypingTimer);
+        if (isGroupTyping) {
+          isGroupTyping = false;
+          socket.emit('group typing stop', {
+            from: currentUserId,
+            groupId: groupId,
+            username: "<%= currentUser.username %>"
+          });
+        }
+      }
+    });
+
     form.addEventListener('submit', async e => {
       e.preventDefault();
       const formData = new FormData(form);
+      
+      // Stop typing when sending message
+      clearTimeout(groupTypingTimer);
+      if (isGroupTyping) {
+        isGroupTyping = false;
+        socket.emit('group typing stop', {
+          from: currentUserId,
+          groupId: groupId,
+          username: "<%= currentUser.username %>"
+        });
+      }
       
       try {
         const response = await fetch('/groupchat/' + groupId, { 
@@ -668,6 +735,40 @@
       chatBox.appendChild(div);
       scrollToBottom();
     });
+
+    // Group typing indicators
+    socket.on('group user typing', ({ userId, username, isTyping }) => {
+      if (userId === currentUserId) return; // Don't show typing for current user
+      
+      if (isTyping) {
+        typingUsers.add(username);
+      } else {
+        typingUsers.delete(username);
+      }
+      
+      updateGroupTypingIndicator();
+    });
+
+    function updateGroupTypingIndicator() {
+      if (typingUsers.size === 0) {
+        groupTypingIndicator.classList.add('hidden');
+      } else {
+        const userList = Array.from(typingUsers);
+        let typingText = '';
+        
+        if (userList.length === 1) {
+          typingText = `${userList[0]} is typing...`;
+        } else if (userList.length === 2) {
+          typingText = `${userList[0]} and ${userList[1]} are typing...`;
+        } else {
+          typingText = `${userList[0]} and ${userList.length - 1} others are typing...`;
+        }
+        
+        groupTypingText.textContent = typingText;
+        groupTypingIndicator.classList.remove('hidden');
+        scrollToBottom();
+      }
+    }
 
     // Voice Message functionality for group chat
     class VoiceMessageManager {
