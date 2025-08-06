@@ -89,8 +89,9 @@ const upload = multer({
 });
 
 const mediaUpload = upload.single('media');
-const avatarUpload = upload.single('avatar');
-const iconUpload = upload.single('icon');
+const avatarUpload = upload;
+const iconUpload = upload;
+const groupIconUpload = upload;
 
 // ----------- AUTHROUTES -----------
 app.get('/', (req, res) => res.redirect('/login'));
