@@ -8,7 +8,8 @@ const userSchema = new mongoose.Schema({
     profession: { type: String, default: "" },
     location: { type: String, default: "" },
     avatar: String,
-    online: { type: Boolean, default: false }
+    online: { type: Boolean, default: false },
+    theme: { type: String, enum: ['light', 'dark', 'auto'], default: 'auto' }
 });
 
 // Encrypt fields before saving

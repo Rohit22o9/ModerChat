@@ -11,7 +11,24 @@ const groupChatSchema = new mongoose.Schema({
     deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Array of user IDs who deleted this message for themselves
     deletedForEveryone: { type: Boolean, default: false }, // True if message is deleted for everyone
     edited: { type: Boolean, default: false },
-    editedAt: { type: Date }
+    editedAt: { type: Date },
+    // Reactions field
+    reactions: [{
+        emoji: { type: String, required: true },
+        users: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }]
+    }],
+    // Reply functionality
+    replyTo: { type: mongoose.Schema.Types.ObjectId, ref: "GroupChat", default: null },
+    // Polls for group chats
+    poll: {
+        question: String,
+        options: [{
+            text: String,
+            votes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }]
+        }],
+        allowMultiple: { type: Boolean, default: false },
+        expiresAt: Date
+    }
 });
 
 // Method to check if message is deleted for a specific user

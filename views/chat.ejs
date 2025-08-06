@@ -274,11 +274,19 @@
                                 const ext = chat.media.split('.').pop().toLowerCase();
                                 const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
                                 const isVoice = ['webm','ogg','mp3'].includes(ext);
+                                const isVideo = ['mp4','avi','mov','wmv','flv','mkv'].includes(ext);
                             %>
                                 <% if (isImage) { %>
                                     <div class="mb-2">
                                         <img src="<%= chat.media.startsWith('/') ? chat.media : '/' + chat.media %>"
                                              alt="Media" class="rounded-md max-h-60 shadow">
+                                    </div>
+                                <% } else if (isVideo) { %>
+                                    <div class="mb-2">
+                                        <video controls class="rounded-md max-h-60 shadow" style="max-width: 100%;">
+                                            <source src="<%= chat.media.startsWith('/') ? chat.media : '/' + chat.media %>" type="video/<%= ext %>">
+                                            Your browser does not support the video tag.
+                                        </video>
                                     </div>
                                 <% } else if (isVoice) { %>
                                     <div class="voice-message-container">
@@ -563,7 +571,7 @@
         const filePreview = document.getElementById('filePreview');
         const previewContent = document.getElementById('previewContent');
         const typingIndicator = document.getElementById('typingIndicator');
-        
+
         // Typing functionality
         let typingTimer;
         let isTyping = false;
@@ -622,7 +630,7 @@
                     username: "<%= currentUser.username %>"
                 });
             }
-            
+
             clearTimeout(typingTimer);
             typingTimer = setTimeout(() => {
                 isTyping = false;
@@ -973,177 +981,6 @@
                     return '';
             }
         }
-
-        // Socket event handlers
-        socket.on('chat message', (data) => {
-            try {
-                const isCurrentUser = data.from === currentUserId;
-                const bubbleClass = isCurrentUser
-                    ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-br-md'
-                    : 'bg-white/80 backdrop-blur-lg text-secondary-900 rounded-bl-md border border-white/20';
-
-                let mediaHTML = '';
-                if (data.media) {
-                    const ext = data.media.split('.').pop().toLowerCase();
-                    const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
-                    const isVoice = ['webm','ogg','mp3'].includes(ext);
-
-                    if (isImage) {
-                        mediaHTML = `
-                            <div class="mb-2">
-                                <img src="${escapeHtml(data.media)}" class="rounded-md max-h-60 shadow" alt="Media">
-                            </div>`;
-                    } else if (isVoice) {
-                         mediaHTML = `
-                            <div class="voice-message-container">
-                                <button class="voice-play-btn" data-audio-src="${escapeHtml(data.media)}">
-                                    <svg class="play-icon h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.166a1 1 0 00-1.197-.773 1 1 0 00-.773 1.197l.62 4.361a1 1 0 01-.467 1.062L10 20v-8.752c0-.248.537-.484 1.2-.659l3.493-1.747Z"/>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19v-6.752c0-.248.537-.484 1.2-.659l3.493-1.747a1 1 0 00.595-.883L14.752 11.166z"/>
-                                    </svg>
-                                    <svg class="pause-icon h-6 w-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                </button>
-                                <div class="voice-progress-bar-container">
-                                    <div class="voice-progress"></div>
-                                </div>
-                                <div class="voice-duration">0:00</div>
-                            </div>`;
-                    } else {
-                        const extColor =
-                            ext === 'pdf' ? 'text-red-500' :
-                            ['doc','docx'].includes(ext) ? 'text-blue-600' :
-                            ['xls','xlsx'].includes(ext) ? 'text-green-600' :
-                            ['ppt','pptx'].includes(ext) ? 'text-orange-500' :
-                            ['zip','rar'].includes(ext) ? 'text-yellow-500' : 'text-gray-600';
-
-                        mediaHTML = `
-                            <div class="bg-gray-100 rounded-md p-3 mb-2 shadow flex flex-col space-y-2">
-                                <div class="flex items-center space-x-3">
-                                    <svg class="w-6 h-6 ${extColor}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                        <path d="M12 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                                        <polyline points="12 2 12 8 18 8"/>
-                                    </svg>
-                                    <div>
-                                        <p class="font-semibold text-gray-800 text-sm truncate max-w-xs">${escapeHtml(data.originalName || data.media.split('/').pop())}</p>
-                                        <p class="text-xs text-gray-500 uppercase">DOCUMENT</p>
-                                    </div>
-                                </div>
-                                <div class="flex space-x-3 mt-1">
-                                    <a href="${escapeHtml(data.media)}" target="_blank" class="text-xs px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Open</a>
-                                    <a href="${escapeHtml(data.media)}" download="${escapeHtml(data.originalName || data.media.split('/').pop())}" class="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600">Download</a>
-                                </div>
-                            </div>`;
-                    }
-                }
-
-                const statusIcon = isCurrentUser ? getMessageStatusIcon(data.status || 'sent') : '';
-                
-                const msgHTML = `
-                    <div class="flex ${isCurrentUser ? 'justify-end' : 'justify-start'}" data-id="${escapeHtml(data._id)}">
-                        <div class="message-container relative">
-                            <div class="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl ${bubbleClass} shadow-lg">
-                                ${mediaHTML}
-                                ${data.msg ? `<div class="message-text"><p class="text-sm leading-relaxed">${escapeHtml(data.msg)}</p></div>` : ''}
-                                <div class="flex items-center justify-between mt-2">
-                                    <span class="text-xs ${isCurrentUser ? 'text-primary-100' : 'text-secondary-500'}">
-                                        ${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}
-                                        ${data.edited ? '<span class="ml-1 italic">(edited)</span>' : ''}
-                                    </span>
-                                    ${statusIcon}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                chatBox.insertAdjacentHTML('beforeend', msgHTML);
-                scrollToBottom();
-            } catch (error) {
-                console.error('Error handling chat message:', error);
-            }
-        });
-
-        // Handle message deletion
-        socket.on('message deleted', ({ messageId, deleteType }) => {
-            try {
-                const messageElement = document.querySelector(`[data-id="${messageId}"]`);
-                if (messageElement) {
-                    if (deleteType === 'forEveryone') {
-                        messageElement.remove();
-                    } else {
-                        messageElement.remove();
-                    }
-                }
-            } catch (error) {
-                console.error('Error handling message deletion:', error);
-            }
-        });
-
-        // Handle message editing
-        socket.on('message edited', (updatedMessage) => {
-            try {
-                const messageElement = document.querySelector(`[data-id="${updatedMessage._id}"]`);
-                if (messageElement) {
-                    const messageTextDiv = messageElement.querySelector('.message-text');
-                    const timeSpan = messageElement.querySelector('.text-xs');
-
-                    if (messageTextDiv) {
-                        messageTextDiv.innerHTML = `<p class="text-sm leading-relaxed">${escapeHtml(updatedMessage.msg)}</p>`;
-                    }
-
-                    // Update timestamp to show edited
-                    if (timeSpan && !timeSpan.innerHTML.includes('(edited)')) {
-                        timeSpan.innerHTML += ' <span class="ml-1 italic">(edited)</span>';
-                    }
-                }
-            } catch (error) {
-                console.error('Error handling message edit:', error);
-            }
-        });
-
-        // User status
-        socket.on('userStatus', ({ userId, online }) => {
-            try {
-                if(userId === otherUserId) {
-                    statusElem.textContent = online ? 'Online' : 'Offline';
-                    statusElem.className = `text-xs font-medium ${online ? 'text-green-600' : 'text-gray-500'}`;
-                }
-            } catch (error) {
-                console.error('Error handling user status:', error);
-            }
-        });
-
-        // Typing indicator
-        socket.on('user typing', ({ userId, username, isTyping }) => {
-            try {
-                if (userId === otherUserId) {
-                    if (isTyping) {
-                        typingIndicator.classList.remove('hidden');
-                        scrollToBottom();
-                    } else {
-                        typingIndicator.classList.add('hidden');
-                    }
-                }
-            } catch (error) {
-                console.error('Error handling typing status:', error);
-            }
-        });
-
-        // Message status updates
-        socket.on('message status update', ({ messageId, status }) => {
-            try {
-                const messageElement = document.querySelector(`[data-id="${messageId}"]`);
-                if (messageElement) {
-                    const statusElement = messageElement.querySelector('.message-status');
-                    if (statusElement) {
-                        statusElement.innerHTML = getMessageStatusIcon(status).replace('<div class="message-status flex items-center">', '').replace('</div>', '');
-                    }
-                }
-            } catch (error) {
-                console.error('Error updating message status:', error);
-            }
-        });
 
         // Call Manager Class - IMPROVED VERSION
         class CallManager {
@@ -1926,8 +1763,8 @@
                     audioElement.onended = () => {
                         playIcon.classList.remove('hidden');
                         pauseIcon.classList.add('hidden');
-                        playBtn.classList.remove('bg-gray-600');
                         playBtn.classList.add('bg-primary-500');
+                        playBtn.classList.remove('bg-gray-600');
                         playBtn.setAttribute('title', 'Play');
                         this.resetProgressAndTimer(); // Reset timer and progress on completion
                     };

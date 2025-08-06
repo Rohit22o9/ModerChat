@@ -48,34 +48,51 @@ app.use(session({
 }));
 
 // ----------- FILE UPLOAD CONFIGURATION -----------
-const configureUpload = (subfolder) => {
-    return multer({
-        storage: multer.diskStorage({
-            destination: (req, file, cb) => {
-                const dir = path.join(__dirname, 'public', subfolder);
-                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                cb(null, dir);
-            },
-            filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
-        }),
-        limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-        fileFilter: (req, file, cb) => {
-            const filetypes = /jpeg|jpg|png|gif|mp4|mpeg|pdf|mp3|wav|ogg|webm|m4a/;
-            const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-            const mimetype = filetypes.test(file.mimetype) || file.mimetype.startsWith('audio/');
-            if (extname && mimetype) {
-                return cb(null, true);
-            }
-            cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+// Configure multer for different file types
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        let uploadPath = 'public/';
+
+        if (file.fieldname === 'avatar') {
+            uploadPath += 'avatars/';
+        } else if (file.fieldname === 'icon') {
+            uploadPath += 'group_icons/';
+        } else {
+            uploadPath += 'media/';
         }
-    });
-};
 
-const avatarUpload = configureUpload('avatars');
-const mediaUpload = configureUpload('media');
-const groupIconUpload = configureUpload('group_icons');
+        if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + path.extname(file.originalname));
+    }
+});
 
-// ----------- AUTH ROUTES -----------
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit for videos
+    fileFilter: (req, file, cb) => {
+        // Allow images, documents, audio, and videos
+        const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|mp3|wav|ogg|webm|m4a|mp4|avi|mov|wmv|flv|mkv/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Unsupported file type'));
+        }
+    }
+});
+
+const mediaUpload = upload.single('media');
+const avatarUpload = upload.single('avatar');
+const iconUpload = upload.single('icon');
+
+// ----------- AUTHROUTES -----------
 app.get('/', (req, res) => res.redirect('/login'));
 
 app.get('/login', (req, res) => {
@@ -87,7 +104,7 @@ app.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         const user = await User.findOne({ username });
-        
+
         if (!user || !await bcrypt.compare(password, user.password)) {
             return res.render('login', { error: 'Invalid credentials' });
         }
@@ -119,14 +136,14 @@ app.post('/signup', avatarUpload.single('avatar'), async (req, res) => {
         if (!passwordRegex.test(password)) errors.password = "Password must be at least 6 characters and include one uppercase letter and one special character.";
         if (await User.findOne({ username })) errors.username = "Username already taken. Choose another.";
         if (await User.findOne({ email })) errors.email = "Email already registered.";
-        
+
         if (Object.keys(errors).length > 0) {
             return res.render('signup', { errors, username, email, profession, location });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const avatarPath = req.file ? `/avatars/${req.file.filename}` : null;
-        
+
         const newUser = new User({ 
             username, 
             email, 
@@ -135,7 +152,7 @@ app.post('/signup', avatarUpload.single('avatar'), async (req, res) => {
             location, 
             avatar: avatarPath 
         });
-        
+
         await newUser.save();
         res.redirect('/login');
     } catch (error) {
@@ -178,7 +195,7 @@ app.get('/dashboard', async (req, res) => {
 
 app.post('/startchat', async (req, res) => {
     if (!req.session.userId) return res.redirect('/login');
-    
+
     try {
         const receiverId = req.body.to;
         if (!await User.findById(receiverId)) return res.status(404).send("User not found");
@@ -191,13 +208,13 @@ app.post('/startchat', async (req, res) => {
 
 app.get('/chat/:id', async (req, res) => {
     if (!req.session.userId) return res.redirect('/login');
-    
+
     try {
         const otherUser = await User.findById(req.params.id);
         const currentUser = await User.findById(req.session.userId);
-        
+
         if (!otherUser || !currentUser) return res.status(404).send("User not found!");
-        
+
         const rawChats = await Chat.find({ 
             $or: [{ from: currentUser._id, to: otherUser._id }, { from: otherUser._id, to: currentUser._id }],
             $and: [
@@ -242,20 +259,20 @@ app.post('/chat/:id', mediaUpload.single('media'), async (req, res) => {
 app.delete('/message/:messageId', async (req, res) => {
     try {
         if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
-        
+
         const { messageId } = req.params;
         const { deleteType } = req.body;
         const currentUserId = req.session.userId;
-        
+
         const message = await Chat.findById(messageId);
         if (!message) return res.status(404).json({ error: 'Message not found' });
-        
+
         if (message.from.toString() !== currentUserId) {
             return res.status(403).json({ error: 'You can only delete your own messages' });
         }
-        
+
         const roomId = [message.from, message.to].sort().join('_');
-        
+
         if (deleteType === 'forEveryone') {
             message.deletedForEveryone = true;
             await message.save();
@@ -267,7 +284,7 @@ app.delete('/message/:messageId', async (req, res) => {
             }
             io.to(currentUserId).emit('message deleted', { messageId, deleteType: 'forMe' });
         }
-        
+
         res.json({ success: true });
     } catch (error) {
         console.error('Delete message error:', error);
@@ -278,40 +295,40 @@ app.delete('/message/:messageId', async (req, res) => {
 app.put('/message/:messageId', async (req, res) => {
     try {
         if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
-        
+
         const { messageId } = req.params;
         const { newMessage } = req.body;
         const currentUserId = req.session.userId;
-        
+
         const message = await Chat.findById(messageId);
         if (!message) return res.status(404).json({ error: 'Message not found' });
-        
+
         if (message.from.toString() !== currentUserId) {
             return res.status(403).json({ error: 'You can only edit your own messages' });
         }
-        
+
         if (message.deletedForEveryone || message.deletedFor.includes(currentUserId)) {
             return res.status(400).json({ error: 'Cannot edit deleted message' });
         }
-        
+
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
         if (message.created_at < fifteenMinutesAgo) {
             return res.status(400).json({ error: 'Message too old to edit (15 minute limit)' });
         }
-        
+
         if (!message.msg && message.media) {
             return res.status(400).json({ error: 'Cannot edit media-only messages' });
         }
-        
+
         message.msg = newMessage;
         message.edited = true;
         message.editedAt = new Date();
         await message.save();
-        
+
         const decryptedMessage = message.getDecrypted();
         const roomId = [message.from, message.to].sort().join('_');
         io.to(roomId).emit('message edited', decryptedMessage);
-        
+
         res.json({ success: true, message: decryptedMessage });
     } catch (error) {
         console.error('Edit message error:', error);
@@ -322,18 +339,18 @@ app.put('/message/:messageId', async (req, res) => {
 // ----------- API ROUTES -----------
 app.get('/api/users/available-for-group/:groupId', async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
-    
+
     try {
         const group = await Group.findById(req.params.groupId);
         if (!group) {
             return res.status(404).json({ error: 'Group not found' });
         }
-        
+
         // Check if user is admin
         if (!group.admin.equals(req.session.userId)) {
             return res.status(403).json({ error: 'Not authorized' });
         }
-        
+
         // Get users who are not already members
         const users = await User.find({ 
             _id: { 
@@ -341,7 +358,7 @@ app.get('/api/users/available-for-group/:groupId', async (req, res) => {
                 $ne: req.session.userId
             } 
         }).select('username _id');
-        
+
         res.json(users.map(user => ({ _id: user._id, username: user.username })));
     } catch (error) {
         console.error('Available users error:', error);
@@ -352,12 +369,12 @@ app.get('/api/users/available-for-group/:groupId', async (req, res) => {
 // ----------- GROUP ROUTES -----------
 app.get('/groups', async (req, res) => {
     if (!req.session.userId) return res.redirect('/login');
-    
+
     try {
         const groups = await Group.find({ members: req.session.userId })
             .populate('admin')
             .populate('members');
-            
+
         res.render('groups_list', { 
             groups, 
             currentUser: await User.findById(req.session.userId) 
@@ -370,7 +387,7 @@ app.get('/groups', async (req, res) => {
 
 app.get('/groups/create', async (req, res) => {
     if (!req.session.userId) return res.redirect('/login');
-    
+
     try {
         const users = await User.find({ _id: { $ne: req.session.userId } });
         res.render('group_create', { 
@@ -385,19 +402,19 @@ app.get('/groups/create', async (req, res) => {
 
 app.post('/groups/create', groupIconUpload.single('icon'), async (req, res) => {
     if (!req.session.userId) return res.redirect('/login');
-    
+
     try {
         const { name, members } = req.body;
         const icon = req.file ? `/group_icons/${req.file.filename}` : null;
         const memberArray = Array.isArray(members) ? members : [members];
-        
+
         const group = await Group.create({
             name,
             icon,
             admin: req.session.userId,
             members: [req.session.userId, ...memberArray]
         });
-        
+
         res.redirect(`/groups/${group._id}`);
     } catch (error) {
         console.error('Group creation error:', error);
@@ -407,12 +424,12 @@ app.post('/groups/create', groupIconUpload.single('icon'), async (req, res) => {
 
 app.get('/groups/:id', async (req, res) => {
     if (!req.session.userId) return res.redirect('/login');
-    
+
     try {
         const group = await Group.findById(req.params.id)
             .populate('members')
             .populate('admin');
-            
+
         if (!group.members.some(m => m._id.equals(req.session.userId))) {
             return res.status(403).send('Not authorized');
         }
@@ -426,7 +443,7 @@ app.get('/groups/:id', async (req, res) => {
         })
             .populate('from')
             .sort({ created_at: 1 });
-            
+
         res.render('group_chat', { 
             group, 
             chats, 
@@ -438,28 +455,39 @@ app.get('/groups/:id', async (req, res) => {
     }
 });
 
-app.post('/groupchat/:id', mediaUpload.single('media'), async (req, res) => {
+app.post('/groupchat/:groupId', mediaUpload.single('media'), async (req, res) => {
     try {
         if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
 
-        const from = req.session.userId;
+        const { groupId } = req.params;
+        const userId = req.session.userId;
         const msg = req.body.msg || '';
         const media = req.file ? `/media/${req.file.filename}` : null;
         const originalName = req.file ? req.file.originalname : null;
+        const replyTo = req.body.replyTo || null;
 
-        const newChat = await GroupChat.create({ 
-            group: req.params.id, 
-            from, 
-            msg, 
+        const group = await Group.findById(groupId);
+        if (!group || !group.members.includes(userId)) {
+            return res.status(403).json({ error: 'Not a group member' });
+        }
+
+        const newMessage = await GroupChat.create({
+            group: groupId,
+            from: userId,
+            msg,
             media,
-            originalName 
+            originalName,
+            replyTo
         });
-        
-        const populatedChat = await newChat.populate('from');
-        io.to(`group_${req.params.id}`).emit('group message', populatedChat);
-        res.json(populatedChat);
+
+        const populatedMessage = await GroupChat.findById(newMessage._id)
+            .populate('from', 'username avatar')
+            .populate('replyTo');
+
+        io.to(`group_${groupId}`).emit('group message', populatedMessage);
+        res.json({ success: true, message: populatedMessage });
     } catch (error) {
-        console.error('Group message error:', error);
+        console.error('Send group message error:', error);
         res.status(500).json({ error: 'Failed to send group message' });
     }
 });
@@ -470,34 +498,34 @@ app.post('/groups/:id/add', async (req, res) => {
         if (!group) {
             return res.status(404).json({ error: 'Group not found' });
         }
-        
+
         if (!group.admin.equals(req.session.userId)) {
             return res.status(403).json({ error: 'Not authorized' });
         }
-        
+
         const { userId } = req.body;
-        
+
         // Check if user exists
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        
+
         // Check if user is already a member
         if (group.members.includes(userId)) {
             return res.status(400).json({ error: 'User is already a member' });
         }
-        
+
         group.members.push(userId);
         await group.save();
-        
+
         // Notify the new member via socket
         io.to(userId).emit('added-to-group', {
             groupId: group._id,
             groupName: group.name,
             addedBy: req.session.userId
         });
-        
+
         res.json({ success: true, message: 'Member added successfully' });
     } catch (error) {
         console.error('Add member error:', error);
@@ -511,33 +539,33 @@ app.post('/groups/:id/remove', async (req, res) => {
         if (!group) {
             return res.status(404).json({ error: 'Group not found' });
         }
-        
+
         if (!group.admin.equals(req.session.userId)) {
             return res.status(403).json({ error: 'Not authorized' });
         }
-        
+
         const { userId } = req.body;
-        
+
         // Check if user is a member
         if (!group.members.includes(userId)) {
             return res.status(400).json({ error: 'User is not a member' });
         }
-        
+
         // Cannot remove admin
         if (group.admin.toString() === userId) {
             return res.status(400).json({ error: 'Cannot remove admin' });
         }
-        
+
         group.members = group.members.filter(m => m.toString() !== userId);
         await group.save();
-        
+
         // Notify the removed member via socket
         io.to(userId).emit('removed-from-group', {
             groupId: group._id,
             groupName: group.name,
             removedBy: req.session.userId
         });
-        
+
         res.json({ success: true, message: 'Member removed successfully' });
     } catch (error) {
         console.error('Remove member error:', error);
@@ -551,10 +579,10 @@ app.post('/groups/:id/update', groupIconUpload.single('icon'), async (req, res) 
         if (!group.admin.equals(req.session.userId)) {
             return res.status(403).send('Not authorized');
         }
-        
+
         if (req.body.name) group.name = req.body.name;
         if (req.file) group.icon = `/group_icons/${req.file.filename}`;
-        
+
         await group.save();
         res.redirect(`/groups/${req.params.id}`);
     } catch (error) {
@@ -569,21 +597,21 @@ app.post('/groups/:id/exit', async (req, res) => {
         if (!group) {
             return res.status(404).json({ error: 'Group not found' });
         }
-        
+
         // Check if user is a member
         if (!group.members.includes(req.session.userId)) {
             return res.status(400).json({ error: 'You are not a member of this group' });
         }
-        
+
         // Admin cannot exit (must transfer ownership first)
         if (group.admin.toString() === req.session.userId) {
             return res.status(400).json({ error: 'Admin cannot exit group. Transfer ownership first or delete the group.' });
         }
-        
+
         // Remove user from group
         group.members = group.members.filter(m => m.toString() !== req.session.userId);
         await group.save();
-        
+
         // Notify other members via socket
         const currentUser = await User.findById(req.session.userId);
         io.to(`group_${group._id}`).emit('member-left-group', {
@@ -593,7 +621,7 @@ app.post('/groups/:id/exit', async (req, res) => {
                 username: currentUser.username
             }
         });
-        
+
         res.json({ success: true, message: 'Successfully exited group' });
     } catch (error) {
         console.error('Exit group error:', error);
@@ -605,23 +633,23 @@ app.post('/groups/:id/exit', async (req, res) => {
 app.delete('/groupmessage/:messageId', async (req, res) => {
     try {
         if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
-        
+
         const { messageId } = req.params;
         const { deleteType } = req.body;
         const currentUserId = req.session.userId;
-        
+
         const message = await GroupChat.findById(messageId).populate('group');
         if (!message) return res.status(404).json({ error: 'Message not found' });
-        
+
         // Check if user is a member of the group
         if (!message.group.members.includes(currentUserId)) {
             return res.status(403).json({ error: 'Not authorized' });
         }
-        
+
         if (message.from.toString() !== currentUserId) {
             return res.status(403).json({ error: 'You can only delete your own messages' });
         }
-        
+
         if (deleteType === 'forEveryone') {
             message.deletedForEveryone = true;
             await message.save();
@@ -633,7 +661,7 @@ app.delete('/groupmessage/:messageId', async (req, res) => {
             }
             io.to(currentUserId).emit('group message deleted', { messageId, deleteType: 'forMe' });
         }
-        
+
         res.json({ success: true });
     } catch (error) {
         console.error('Delete group message error:', error);
@@ -644,48 +672,254 @@ app.delete('/groupmessage/:messageId', async (req, res) => {
 app.put('/groupmessage/:messageId', async (req, res) => {
     try {
         if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
-        
+
         const { messageId } = req.params;
         const { newMessage } = req.body;
         const currentUserId = req.session.userId;
-        
+
         const message = await GroupChat.findById(messageId).populate('group').populate('from');
         if (!message) return res.status(404).json({ error: 'Message not found' });
-        
+
         // Check if user is a member of the group
         if (!message.group.members.includes(currentUserId)) {
             return res.status(403).json({ error: 'Not authorized' });
         }
-        
+
         if (message.from._id.toString() !== currentUserId) {
             return res.status(403).json({ error: 'You can only edit your own messages' });
         }
-        
+
         if (message.deletedForEveryone || message.deletedFor.includes(currentUserId)) {
             return res.status(400).json({ error: 'Cannot edit deleted message' });
         }
-        
+
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
         if (message.created_at < fifteenMinutesAgo) {
             return res.status(400).json({ error: 'Message too old to edit (15 minute limit)' });
         }
-        
+
         if (!message.msg && message.media) {
             return res.status(400).json({ error: 'Cannot edit media-only messages' });
         }
-        
+
         message.msg = newMessage;
         message.edited = true;
         message.editedAt = new Date();
         await message.save();
-        
+
         const updatedMessage = await GroupChat.findById(messageId).populate('from');
         io.to(`group_${message.group._id}`).emit('group message edited', updatedMessage);
-        
+
         res.json({ success: true, message: updatedMessage });
     } catch (error) {
         console.error('Edit group message error:', error);
         res.status(500).json({ error: 'Failed to edit message' });
+    }
+});
+
+// ----------- REACTION ROUTES -----------
+app.post('/message/:messageId/react', async (req, res) => {
+    try {
+        if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+        const { messageId } = req.params;
+        const { emoji } = req.body;
+        const userId = req.session.userId;
+
+        const message = await Chat.findById(messageId);
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+
+        // Check if user is part of the conversation
+        if (message.from.toString() !== userId && message.to.toString() !== userId) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+
+        let reactionIndex = message.reactions.findIndex(r => r.emoji === emoji);
+
+        if (reactionIndex === -1) {
+            // Add new reaction
+            message.reactions.push({ emoji, users: [userId] });
+        } else {
+            // Toggle existing reaction
+            const userIndex = message.reactions[reactionIndex].users.indexOf(userId);
+            if (userIndex === -1) {
+                message.reactions[reactionIndex].users.push(userId);
+            } else {
+                message.reactions[reactionIndex].users.splice(userIndex, 1);
+                // Remove reaction if no users left
+                if (message.reactions[reactionIndex].users.length === 0) {
+                    message.reactions.splice(reactionIndex, 1);
+                }
+            }
+        }
+
+        await message.save();
+
+        const roomId = [message.from, message.to].sort().join('_');
+        io.to(roomId).emit('message reaction', {
+            messageId,
+            reactions: message.reactions
+        });
+
+        res.json({ success: true, reactions: message.reactions });
+    } catch (error) {
+        console.error('React to message error:', error);
+        res.status(500).json({ error: 'Failed to react to message' });
+    }
+});
+
+app.post('/groupmessage/:messageId/react', async (req, res) => {
+    try {
+        if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+        const { messageId } = req.params;
+        const { emoji } = req.body;
+        const userId = req.session.userId;
+
+        const message = await GroupChat.findById(messageId).populate('group');
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+
+        // Check if user is a member of the group
+        if (!message.group.members.includes(userId)) {
+            return res.status(403).json({ error: 'Not a group member' });
+        }
+
+        let reactionIndex = message.reactions.findIndex(r => r.emoji === emoji);
+
+        if (reactionIndex === -1) {
+            message.reactions.push({ emoji, users: [userId] });
+        } else {
+            const userIndex = message.reactions[reactionIndex].users.indexOf(userId);
+            if (userIndex === -1) {
+                message.reactions[reactionIndex].users.push(userId);
+            } else {
+                message.reactions[reactionIndex].users.splice(userIndex, 1);
+                if (message.reactions[reactionIndex].users.length === 0) {
+                    message.reactions.splice(reactionIndex, 1);
+                }
+            }
+        }
+
+        await message.save();
+
+        io.to(`group_${message.group._id}`).emit('group message reaction', {
+            messageId,
+            reactions: message.reactions
+        });
+
+        res.json({ success: true, reactions: message.reactions });
+    } catch (error) {
+        console.error('React to group message error:', error);
+        res.status(500).json({ error: 'Failed to react to message' });
+    }
+});
+
+// ----------- POLL ROUTES -----------
+app.post('/groupchat/:groupId/poll', async (req, res) => {
+    try {
+        if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+        const { groupId } = req.params;
+        const { question, options, allowMultiple, duration } = req.body;
+        const userId = req.session.userId;
+
+        const group = await Group.findById(groupId);
+        if (!group || !group.members.includes(userId)) {
+            return res.status(403).json({ error: 'Not a group member' });
+        }
+
+        const expiresAt = duration ? new Date(Date.now() + duration * 60 * 60 * 1000) : null;
+
+        const pollMessage = await GroupChat.create({
+            group: groupId,
+            from: userId,
+            poll: {
+                question,
+                options: options.map(opt => ({ text: opt, votes: [] })),
+                allowMultiple: allowMultiple || false,
+                expiresAt
+            }
+        });
+
+        const populatedPoll = await GroupChat.findById(pollMessage._id).populate('from', 'username avatar');
+
+        io.to(`group_${groupId}`).emit('group message', populatedPoll);
+        res.json({ success: true, poll: populatedPoll });
+    } catch (error) {
+        console.error('Create poll error:', error);
+        res.status(500).json({ error: 'Failed to create poll' });
+    }
+});
+
+app.post('/groupmessage/:messageId/vote', async (req, res) => {
+    try {
+        if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+        const { messageId } = req.params;
+        const { optionIndex } = req.body;
+        const userId = req.session.userId;
+
+        const message = await GroupChat.findById(messageId).populate('group');
+        if (!message || !message.poll) return res.status(404).json({ error: 'Poll not found' });
+
+        if (!message.group.members.includes(userId)) {
+            return res.status(403).json({ error: 'Not a group member' });
+        }
+
+        // Check if poll has expired
+        if (message.poll.expiresAt && new Date() > message.poll.expiresAt) {
+            return res.status(400).json({ error: 'Poll has expired' });
+        }
+
+        const option = message.poll.options[optionIndex];
+        if (!option) return res.status(400).json({ error: 'Invalid option' });
+
+        // Handle voting logic
+        if (!message.poll.allowMultiple) {
+            // Remove user from all options first if single choice
+            message.poll.options.forEach(opt => {
+                const userIndex = opt.votes.indexOf(userId);
+                if (userIndex !== -1) opt.votes.splice(userIndex, 1);
+            });
+        }
+
+        // Toggle vote for selected option
+        const userIndex = option.votes.indexOf(userId);
+        if (userIndex === -1) {
+            option.votes.push(userId);
+        } else {
+            option.votes.splice(userIndex, 1);
+        }
+
+        await message.save();
+
+        io.to(`group_${message.group._id}`).emit('poll update', {
+            messageId,
+            poll: message.poll
+        });
+
+        res.json({ success: true, poll: message.poll });
+    } catch (error) {
+        console.error('Vote on poll error:', error);
+        res.status(500).json({ error: 'Failed to vote on poll' });
+    }
+});
+
+// ----------- THEME PREFERENCE ROUTE -----------
+app.post('/user/theme', async (req, res) => {
+    try {
+        if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+
+        const { theme } = req.body;
+        if (!['light', 'dark', 'auto'].includes(theme)) {
+            return res.status(400).json({ error: 'Invalid theme' });
+        }
+
+        await User.findByIdAndUpdate(req.session.userId, { theme });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Update theme error:', error);
+        res.status(500).json({ error: 'Failed to update theme' });
     }
 });
 
@@ -695,29 +929,29 @@ app.post('/call/initiate/group', async (req, res) => {
         if (!req.session.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        
+
         const { groupId, type } = req.body;
-        
+
         if (!groupId || !type || !['audio', 'video'].includes(type)) {
             return res.status(400).json({ error: 'Invalid call parameters' });
         }
-        
+
         const group = await Group.findById(groupId).populate('members');
         if (!group) {
             return res.status(404).json({ error: 'Group not found' });
         }
-        
+
         if (!group.members.some(m => m._id.equals(req.session.userId))) {
             return res.status(403).json({ error: 'Not authorized' });
         }
-        
+
         const caller = await User.findById(req.session.userId);
         const onlineMembers = group.members.filter(m => m.online && !m._id.equals(req.session.userId));
-        
+
         if (onlineMembers.length === 0) {
             return res.status(400).json({ error: 'No online members to call' });
         }
-        
+
         // Create call record for the group
         const call = new Call({
             caller: req.session.userId,
@@ -726,9 +960,9 @@ app.post('/call/initiate/group', async (req, res) => {
             type,
             status: 'ringing'
         });
-        
+
         await call.save();
-        
+
         // Notify all online group members except the caller
         onlineMembers.forEach(member => {
             io.to(member._id.toString()).emit('incoming-group-call', {
@@ -743,7 +977,7 @@ app.post('/call/initiate/group', async (req, res) => {
                 type
             });
         });
-        
+
         // Auto-end call after 30 seconds if no one joins
         setTimeout(async () => {
             const callCheck = await Call.findById(call._id);
@@ -751,11 +985,11 @@ app.post('/call/initiate/group', async (req, res) => {
                 callCheck.status = 'missed';
                 callCheck.endTime = new Date();
                 await callCheck.save();
-                
+
                 io.to(`group_${groupId}`).emit('group-call-timeout', { callId: call._id });
             }
         }, 30000);
-        
+
         res.json({ success: true, callId: call._id });
     } catch (error) {
         console.error('Group call initiation error:', error);
@@ -768,22 +1002,22 @@ app.post('/call/initiate', async (req, res) => {
         if (!req.session.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        
+
         const { receiverId, type } = req.body;
-        
+
         if (!receiverId || !type || !['audio', 'video'].includes(type)) {
             return res.status(400).json({ error: 'Invalid call parameters' });
         }
-        
+
         const receiver = await User.findById(receiverId);
         if (!receiver) {
             return res.status(404).json({ error: 'User not found' });
         }
-        
+
         if (!receiver.online) {
             return res.status(400).json({ error: 'User is offline' });
         }
-        
+
         const existingCall = await Call.findOne({
             $or: [
                 { caller: req.session.userId, receiver: receiverId },
@@ -791,21 +1025,21 @@ app.post('/call/initiate', async (req, res) => {
             ],
             status: { $in: ['ringing', 'accepted'] }
         });
-        
+
         if (existingCall) {
             return res.status(400).json({ error: 'Call already in progress' });
         }
-        
+
         const call = new Call({
             caller: req.session.userId,
             receiver: receiverId,
             type,
             status: 'ringing'
         });
-        
+
         await call.save();
         const caller = await User.findById(req.session.userId);
-        
+
         io.to(receiverId).emit('incoming-call', {
             callId: call._id,
             caller: {
@@ -815,19 +1049,19 @@ app.post('/call/initiate', async (req, res) => {
             },
             type
         });
-        
+
         setTimeout(async () => {
             const callCheck = await Call.findById(call._id);
             if (callCheck && callCheck.status === 'ringing') {
                 callCheck.status = 'missed';
                 callCheck.endTime = new Date();
                 await callCheck.save();
-                
+
                 io.to(req.session.userId).emit('call-timeout', { callId: call._id });
                 io.to(receiverId).emit('call-missed', { callId: call._id });
             }
         }, 30000);
-        
+
         res.json({ success: true, callId: call._id });
     } catch (error) {
         console.error('Call initiation error:', error);
@@ -840,30 +1074,30 @@ app.post('/call/:callId/respond', async (req, res) => {
         if (!req.session.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        
+
         const { callId } = req.params;
         const { action } = req.body;
-        
+
         if (!['accept', 'decline'].includes(action)) {
             return res.status(400).json({ error: 'Invalid action' });
         }
-        
+
         const call = await Call.findById(callId).populate('caller receiver');
         if (!call) {
             return res.status(404).json({ error: 'Call not found' });
         }
-        
+
         // Handle group calls
         if (call.groupId) {
             const group = await Group.findById(call.groupId).populate('members');
             if (!group.members.some(m => m._id.equals(req.session.userId))) {
                 return res.status(403).json({ error: 'Not authorized to respond to this group call' });
             }
-            
+
             if (call.status !== 'ringing') {
                 return res.status(400).json({ error: 'Call is no longer available' });
             }
-            
+
             if (action === 'accept') {
                 call.status = 'accepted';
                 if (!call.participants) call.participants = [];
@@ -871,7 +1105,7 @@ app.post('/call/:callId/respond', async (req, res) => {
                     call.participants.push(req.session.userId);
                 }
                 await call.save();
-                
+
                 const user = await User.findById(req.session.userId);
                 io.to(`group_${call.groupId}`).emit('group-call-joined', {
                     callId: call._id,
@@ -881,27 +1115,27 @@ app.post('/call/:callId/respond', async (req, res) => {
                         avatar: user.avatar
                     }
                 });
-                
+
                 res.json({ success: true, message: 'Joined group call' });
             } else {
                 res.json({ success: true, message: 'Declined group call' });
             }
             return;
         }
-        
+
         // Handle personal calls
         if (call.receiver._id.toString() !== req.session.userId) {
             return res.status(403).json({ error: 'Not authorized to respond to this call' });
         }
-        
+
         if (call.status !== 'ringing') {
             return res.status(400).json({ error: 'Call is no longer available' });
         }
-        
+
         if (action === 'accept') {
             call.status = 'accepted';
             await call.save();
-            
+
             io.to(call.caller._id.toString()).emit('call-accepted', {
                 callId: call._id,
                 receiver: {
@@ -910,17 +1144,17 @@ app.post('/call/:callId/respond', async (req, res) => {
                     avatar: call.receiver.avatar
                 }
             });
-            
+
             res.json({ success: true, message: 'Call accepted' });
         } else {
             call.status = 'declined';
             call.endTime = new Date();
             await call.save();
-            
+
             io.to(call.caller._id.toString()).emit('call-declined', {
                 callId: call._id
             });
-            
+
             res.json({ success: true, message: 'Call declined' });
         }
     } catch (error) {
@@ -934,29 +1168,29 @@ app.post('/call/:callId/end', async (req, res) => {
         if (!req.session.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        
+
         const { callId } = req.params;
         const call = await Call.findById(callId);
         if (!call) {
             return res.status(404).json({ error: 'Call not found' });
         }
-        
+
         // Handle group calls
         if (call.groupId) {
             const group = await Group.findById(call.groupId).populate('members');
             const isParticipant = call.caller.toString() === req.session.userId || 
                                 (call.participants && call.participants.includes(req.session.userId));
-            
+
             if (!isParticipant) {
                 return res.status(403).json({ error: 'Not authorized to end this call' });
             }
-            
+
             // If caller ends the call, end it for everyone
             if (call.caller.toString() === req.session.userId) {
                 call.status = 'ended';
                 call.endTime = new Date();
                 await call.save();
-                
+
                 io.to(`group_${call.groupId}`).emit('group-call-ended', {
                     callId: call._id,
                     reason: 'Ended by caller'
@@ -967,7 +1201,7 @@ app.post('/call/:callId/end', async (req, res) => {
                     call.participants = call.participants.filter(p => p.toString() !== req.session.userId);
                     await call.save();
                 }
-                
+
                 const user = await User.findById(req.session.userId);
                 io.to(`group_${call.groupId}`).emit('group-call-left', {
                     callId: call._id,
@@ -977,31 +1211,31 @@ app.post('/call/:callId/end', async (req, res) => {
                     }
                 });
             }
-            
+
             res.json({ success: true, message: 'Left group call' });
             return;
         }
-        
+
         // Handle personal calls
         const isParticipant = call.caller.toString() === req.session.userId || 
                             call.receiver.toString() === req.session.userId;
-        
+
         if (!isParticipant) {
             return res.status(403).json({ error: 'Not authorized to end this call' });
         }
-        
+
         call.status = 'ended';
         call.endTime = new Date();
         await call.save();
-        
+
         const otherParticipantId = call.caller.toString() === req.session.userId 
             ? call.receiver.toString() 
             : call.caller.toString();
-            
+
         io.to(otherParticipantId).emit('call-ended', {
             callId: call._id
         });
-        
+
         res.json({ success: true, message: 'Call ended' });
     } catch (error) {
         console.error('End call error:', error);
@@ -1014,29 +1248,29 @@ app.post('/call/:callId/cancel', async (req, res) => {
         if (!req.session.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        
+
         const { callId } = req.params;
         const call = await Call.findById(callId);
         if (!call) {
             return res.status(404).json({ error: 'Call not found' });
         }
-        
+
         if (call.caller.toString() !== req.session.userId) {
             return res.status(403).json({ error: 'Only caller can cancel the call' });
         }
-        
+
         if (!['ringing'].includes(call.status)) {
             return res.status(400).json({ error: 'Call cannot be cancelled in current state' });
         }
-        
+
         call.status = 'cancelled';
         call.endTime = new Date();
         await call.save();
-        
+
         io.to(call.receiver.toString()).emit('call-cancelled', {
             callId: call._id
         });
-        
+
         res.json({ success: true, message: 'Call cancelled' });
     } catch (error) {
         console.error('Cancel call error:', error);
@@ -1049,11 +1283,11 @@ app.get('/calls/history', async (req, res) => {
         if (!req.session.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        
+
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
-        
+
         const calls = await Call.find({
             $or: [
                 { caller: req.session.userId },
@@ -1064,12 +1298,12 @@ app.get('/calls/history', async (req, res) => {
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit);
-        
+
         const callsWithInfo = calls.map(call => {
             const callObj = call.toObject();
             const isIncoming = call.receiver._id.toString() === req.session.userId;
             const otherUser = isIncoming ? call.caller : call.receiver;
-            
+
             return {
                 ...callObj,
                 isIncoming,
@@ -1077,7 +1311,7 @@ app.get('/calls/history', async (req, res) => {
                 formattedDuration: call.formattedDuration
             };
         });
-        
+
         res.json(callsWithInfo);
     } catch (error) {
         console.error('Call history error:', error);
@@ -1090,7 +1324,7 @@ app.get('/calls/active', async (req, res) => {
         if (!req.session.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        
+
         const activeCalls = await Call.find({
             $or: [
                 { caller: req.session.userId },
@@ -1099,7 +1333,7 @@ app.get('/calls/active', async (req, res) => {
             status: { $in: ['ringing', 'accepted'] }
         })
         .populate('caller receiver', 'username avatar');
-        
+
         res.json(activeCalls);
     } catch (error) {
         console.error('Active calls error:', error);
@@ -1255,28 +1489,28 @@ io.on('connection', (socket) => {
                     ],
                     status: { $in: ['ringing', 'accepted'] }
                 });
-                
+
                 for (let call of activeCalls) {
                     call.status = 'ended';
                     call.endTime = new Date();
                     await call.save();
-                    
+
                     const otherUserId = call.caller.toString() === socket.userId 
                         ? call.receiver.toString() 
                         : call.caller.toString();
-                        
+
                     io.to(otherUserId).emit('call-ended', {
                         callId: call._id,
                         reason: 'User disconnected'
                     });
                 }
-                
+
                 // Update user status
                 await User.findByIdAndUpdate(socket.userId, { 
                     online: false,
                     lastSeen: new Date() 
                 });
-                
+
                 io.emit('userStatus', { 
                     userId: socket.userId, 
                     online: false,
