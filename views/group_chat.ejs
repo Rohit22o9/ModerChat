@@ -307,17 +307,59 @@
           <h2 class="text-lg font-semibold mt-2 text-secondary-900"><%= group.name %></h2>
           <p class="text-sm text-secondary-500"><%= group.members.length %> Members</p>
           <hr class="my-4 w-full border-secondary-200">
+          
+          <!-- Members List -->
           <div class="w-full space-y-2 max-h-40 overflow-y-auto">
             <% group.members.forEach(member => { %>
               <div class="flex items-center space-x-3 p-2 rounded-lg hover:bg-secondary-50">
                 <img src="/avatars/<%= member.avatar || 'default-avatar.png' %>" class="w-8 h-8 rounded-full object-cover">
-                <span class="text-sm text-secondary-700"><%= member.username %></span>
-                <% if (group.admin._id.toString() === member._id.toString()) { %>
-                  <span class="text-xs bg-primary-100 text-primary-600 px-2 py-1 rounded-full">Admin</span>
+                <div class="flex-1">
+                  <span class="text-sm text-secondary-700"><%= member.username %></span>
+                  <% if (group.admin._id.toString() === member._id.toString()) { %>
+                    <span class="text-xs bg-primary-100 text-primary-600 px-2 py-1 rounded-full ml-2">Admin</span>
+                  <% } %>
+                </div>
+                
+                <!-- Admin can remove members (except themselves) -->
+                <% if (group.admin._id.toString() === currentUser._id.toString() && member._id.toString() !== currentUser._id.toString()) { %>
+                  <button onclick="removeMember('<%= member._id %>', '<%= member.username %>')" 
+                          class="text-red-500 hover:text-red-700 p-1 rounded" title="Remove Member">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                  </button>
                 <% } %>
               </div>
             <% }) %>
           </div>
+
+          <!-- Admin Options -->
+          <% if (group.admin._id.toString() === currentUser._id.toString()) { %>
+            <hr class="my-4 w-full border-secondary-200">
+            <div class="w-full space-y-3">
+              <h3 class="text-sm font-semibold text-secondary-700">Admin Options</h3>
+              
+              <!-- Add Member -->
+              <div class="space-y-2">
+                <select id="newMemberSelect" class="w-full px-3 py-2 bg-secondary-50 border border-secondary-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm">
+                  <option value="">Select user to add...</option>
+                </select>
+                <button onclick="addMember()" class="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg transition-colors text-sm font-medium">
+                  Add Member
+                </button>
+              </div>
+            </div>
+          <% } %>
+
+          <!-- Member Options (Exit Group) -->
+          <% if (group.admin._id.toString() !== currentUser._id.toString()) { %>
+            <hr class="my-4 w-full border-secondary-200">
+            <div class="w-full">
+              <button onclick="exitGroup()" class="w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg transition-colors text-sm font-medium">
+                Exit Group
+              </button>
+            </div>
+          <% } %></div>
           <% if (group.admin._id.toString() === currentUser._id.toString()) { %>
             <form action="/groups/<%= group._id %>/update" method="POST" enctype="multipart/form-data" class="w-full mt-4 space-y-2">
               <input type="text" name="name" placeholder="New Group Name" 
@@ -887,6 +929,113 @@
 
     // Initialize voice message manager
     const voiceManager = new VoiceMessageManager();
+
+    // Group Management Functions
+    async function loadAvailableUsers() {
+      try {
+        const response = await fetch('/api/users/available-for-group/<%= group._id %>');
+        const users = await response.json();
+        const select = document.getElementById('newMemberSelect');
+        
+        if (select) {
+          select.innerHTML = '<option value="">Select user to add...</option>';
+          users.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user._id;
+            option.textContent = user.username;
+            select.appendChild(option);
+          });
+        }
+      } catch (error) {
+        console.error('Error loading users:', error);
+      }
+    }
+
+    async function addMember() {
+      const select = document.getElementById('newMemberSelect');
+      const userId = select.value;
+      
+      if (!userId) {
+        alert('Please select a user to add');
+        return;
+      }
+
+      try {
+        const response = await fetch('/groups/<%= group._id %>/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId })
+        });
+
+        if (response.ok) {
+          location.reload();
+        } else {
+          const error = await response.text();
+          alert('Error adding member: ' + error);
+        }
+      } catch (error) {
+        console.error('Error adding member:', error);
+        alert('Error adding member');
+      }
+    }
+
+    async function removeMember(userId, username) {
+      if (!confirm(`Are you sure you want to remove ${username} from the group?`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/groups/<%= group._id %>/remove', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId })
+        });
+
+        if (response.ok) {
+          location.reload();
+        } else {
+          const error = await response.text();
+          alert('Error removing member: ' + error);
+        }
+      } catch (error) {
+        console.error('Error removing member:', error);
+        alert('Error removing member');
+      }
+    }
+
+    async function exitGroup() {
+      if (!confirm('Are you sure you want to exit this group? You will no longer receive messages from this group.')) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/groups/<%= group._id %>/exit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+
+        if (response.ok) {
+          window.location.href = '/dashboard';
+        } else {
+          const error = await response.text();
+          alert('Error exiting group: ' + error);
+        }
+      } catch (error) {
+        console.error('Error exiting group:', error);
+        alert('Error exiting group');
+      }
+    }
+
+    // Load available users when panel opens (only for admins)
+    <% if (group.admin._id.toString() === currentUser._id.toString()) { %>
+      loadAvailableUsers();
+    <% } %>
   </script>
   <script src="/js/group-calls.js"></script>
 </body>

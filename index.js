@@ -319,6 +319,36 @@ app.put('/message/:messageId', async (req, res) => {
     }
 });
 
+// ----------- API ROUTES -----------
+app.get('/api/users/available-for-group/:groupId', async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+    
+    try {
+        const group = await Group.findById(req.params.groupId);
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
+        }
+        
+        // Check if user is admin
+        if (!group.admin.equals(req.session.userId)) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+        
+        // Get users who are not already members
+        const users = await User.find({ 
+            _id: { 
+                $nin: group.members,
+                $ne: req.session.userId
+            } 
+        }).select('username _id');
+        
+        res.json(users.map(user => ({ _id: user._id, username: user.username })));
+    } catch (error) {
+        console.error('Available users error:', error);
+        res.status(500).json({ error: 'Error fetching users' });
+    }
+});
+
 // ----------- GROUP ROUTES -----------
 app.get('/groups', async (req, res) => {
     if (!req.session.userId) return res.redirect('/login');
@@ -431,32 +461,81 @@ app.post('/groupchat/:id', mediaUpload.single('media'), async (req, res) => {
 app.post('/groups/:id/add', async (req, res) => {
     try {
         const group = await Group.findById(req.params.id);
-        if (!group.admin.equals(req.session.userId)) {
-            return res.status(403).send('Not authorized');
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
         }
         
-        group.members.push(req.body.userId);
+        if (!group.admin.equals(req.session.userId)) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+        
+        const { userId } = req.body;
+        
+        // Check if user exists
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Check if user is already a member
+        if (group.members.includes(userId)) {
+            return res.status(400).json({ error: 'User is already a member' });
+        }
+        
+        group.members.push(userId);
         await group.save();
-        res.redirect(`/groups/${req.params.id}`);
+        
+        // Notify the new member via socket
+        io.to(userId).emit('added-to-group', {
+            groupId: group._id,
+            groupName: group.name,
+            addedBy: req.session.userId
+        });
+        
+        res.json({ success: true, message: 'Member added successfully' });
     } catch (error) {
         console.error('Add member error:', error);
-        res.status(500).send('Error adding member');
+        res.status(500).json({ error: 'Error adding member' });
     }
 });
 
 app.post('/groups/:id/remove', async (req, res) => {
     try {
         const group = await Group.findById(req.params.id);
-        if (!group.admin.equals(req.session.userId)) {
-            return res.status(403).send('Not authorized');
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
         }
         
-        group.members = group.members.filter(m => m.toString() !== req.body.userId);
+        if (!group.admin.equals(req.session.userId)) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+        
+        const { userId } = req.body;
+        
+        // Check if user is a member
+        if (!group.members.includes(userId)) {
+            return res.status(400).json({ error: 'User is not a member' });
+        }
+        
+        // Cannot remove admin
+        if (group.admin.toString() === userId) {
+            return res.status(400).json({ error: 'Cannot remove admin' });
+        }
+        
+        group.members = group.members.filter(m => m.toString() !== userId);
         await group.save();
-        res.redirect(`/groups/${req.params.id}`);
+        
+        // Notify the removed member via socket
+        io.to(userId).emit('removed-from-group', {
+            groupId: group._id,
+            groupName: group.name,
+            removedBy: req.session.userId
+        });
+        
+        res.json({ success: true, message: 'Member removed successfully' });
     } catch (error) {
         console.error('Remove member error:', error);
-        res.status(500).send('Error removing member');
+        res.status(500).json({ error: 'Error removing member' });
     }
 });
 
@@ -475,6 +554,44 @@ app.post('/groups/:id/update', groupIconUpload.single('icon'), async (req, res) 
     } catch (error) {
         console.error('Group update error:', error);
         res.status(500).send('Error updating group');
+    }
+});
+
+app.post('/groups/:id/exit', async (req, res) => {
+    try {
+        const group = await Group.findById(req.params.id);
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
+        }
+        
+        // Check if user is a member
+        if (!group.members.includes(req.session.userId)) {
+            return res.status(400).json({ error: 'You are not a member of this group' });
+        }
+        
+        // Admin cannot exit (must transfer ownership first)
+        if (group.admin.toString() === req.session.userId) {
+            return res.status(400).json({ error: 'Admin cannot exit group. Transfer ownership first or delete the group.' });
+        }
+        
+        // Remove user from group
+        group.members = group.members.filter(m => m.toString() !== req.session.userId);
+        await group.save();
+        
+        // Notify other members via socket
+        const currentUser = await User.findById(req.session.userId);
+        io.to(`group_${group._id}`).emit('member-left-group', {
+            groupId: group._id,
+            user: {
+                id: currentUser._id,
+                username: currentUser.username
+            }
+        });
+        
+        res.json({ success: true, message: 'Successfully exited group' });
+    } catch (error) {
+        console.error('Exit group error:', error);
+        res.status(500).json({ error: 'Error exiting group' });
     }
 });
 
@@ -986,6 +1103,15 @@ io.on('connection', (socket) => {
             callId: data.callId,
             groupId: data.groupId
         });
+    });
+
+    // Group management events
+    socket.on('group-member-added', (data) => {
+        socket.to(`group_${data.groupId}`).emit('member-added-to-group', data);
+    });
+
+    socket.on('group-member-removed', (data) => {
+        socket.to(`group_${data.groupId}`).emit('member-removed-from-group', data);
     });
 
     socket.on('disconnect', async () => {
