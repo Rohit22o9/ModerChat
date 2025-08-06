@@ -6,7 +6,17 @@ const groupChatSchema = new mongoose.Schema({
     msg: { type: String, default: '' },
     media: { type: String, default: null },
     originalName: { type: String, default: null },
-    created_at: { type: Date, default: Date.now }
+    created_at: { type: Date, default: Date.now },
+    // New fields for delete and edit functionality
+    deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Array of user IDs who deleted this message for themselves
+    deletedForEveryone: { type: Boolean, default: false }, // True if message is deleted for everyone
+    edited: { type: Boolean, default: false },
+    editedAt: { type: Date }
 });
+
+// Method to check if message is deleted for a specific user
+groupChatSchema.methods.isDeletedForUser = function(userId) {
+    return this.deletedForEveryone || this.deletedFor.includes(userId);
+};
 
 module.exports = mongoose.model("GroupChat", groupChatSchema);

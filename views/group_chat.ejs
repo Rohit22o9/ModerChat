@@ -56,6 +56,25 @@
       opacity: 1;
       visibility: visible;
     }
+    .edit-input {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #e2e8f0;
+      border-radius: 0.5rem;
+      padding: 0.5rem;
+      width: 100%;
+      font-size: 0.875rem;
+    }
+    .edit-buttons {
+      margin-top: 0.5rem;
+      display: flex;
+      gap: 0.5rem;
+    }
+    .deleted-message {
+      opacity: 0.5;
+      font-style: italic;
+      background: #f3f4f6 !important;
+      color: #6b7280 !important;
+    }
     body, html {
       overflow-x: hidden;
     }
@@ -308,6 +327,39 @@
                   </span>
                 </div>
               </div>
+
+              <!-- Message Menu (only show for current user's messages) -->
+              <% if (chat.from._id.toString() === currentUser._id.toString()) { %>
+                <div class="message-menu absolute -right-2 top-2">
+                  <button class="menu-trigger p-1 rounded-full hover:bg-gray-200 hover:bg-opacity-50" onclick="toggleMenu(this)">
+                    <svg class="h-4 w-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                    </svg>
+                  </button>
+                  <div class="dropdown-menu bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+                    <% if (chat.msg) { %>
+                      <button onclick="editGroupMessage('<%= chat._id %>')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                        <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                        Edit Message
+                      </button>
+                    <% } %>
+                    <button onclick="deleteGroupMessage('<%= chat._id %>', 'forMe')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                      <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                      </svg>
+                      Delete for Me
+                    </button>
+                    <button onclick="deleteGroupMessage('<%= chat._id %>', 'forEveryone')" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center">
+                      <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                      </svg>
+                      Delete for Everyone
+                    </button>
+                  </div>
+                </div>
+              <% } %>
             </div>
           </div>
         <% }) %>
@@ -1132,6 +1184,203 @@
         alert('Error exiting group');
       }
     }
+
+    // Group Message Management Functions
+    function toggleMenu(button) {
+      const dropdown = button.nextElementSibling;
+      const isShown = dropdown.classList.contains('show');
+
+      // Close all other dropdowns
+      document.querySelectorAll('.dropdown-menu').forEach(menu => {
+        menu.classList.remove('show');
+      });
+
+      // Toggle current dropdown
+      if (!isShown) {
+        dropdown.classList.add('show');
+      }
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.message-menu')) {
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+          menu.classList.remove('show');
+        });
+      }
+    });
+
+    async function deleteGroupMessage(messageId, deleteType) {
+      if (!messageId) {
+        console.error('Message ID is required');
+        return;
+      }
+
+      try {
+        const response = await fetch(`/groupmessage/${messageId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ deleteType })
+        });
+
+        if (response.ok) {
+          // Close dropdown after successful deletion
+          document.querySelectorAll('.dropdown-menu').forEach(menu => {
+            menu.classList.remove('show');
+          });
+        } else {
+          const error = await response.json();
+          alert('Error: ' + (error.error || 'Failed to delete message'));
+        }
+      } catch (error) {
+        console.error('Delete error:', error);
+        alert('Failed to delete message');
+      }
+    }
+
+    function editGroupMessage(messageId) {
+      if (!messageId) {
+        console.error('Message ID is required');
+        return;
+      }
+
+      const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+      if (!messageContainer) {
+        console.error('Message not found');
+        return;
+      }
+
+      const messageTextDiv = messageContainer.querySelector('.message-text');
+      if (!messageTextDiv) {
+        console.error('Message text not found');
+        return;
+      }
+
+      const currentText = messageTextDiv.querySelector('p').textContent.split(': ')[1] || '';
+
+      // Replace message text with input
+      messageTextDiv.innerHTML = `
+        <input type="text" class="edit-input" value="${escapeHtml(currentText)}" onkeypress="handleGroupEditKeypress(event, '${messageId}')" />
+        <div class="edit-buttons">
+          <button onclick="saveGroupEdit('${messageId}')" class="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">Save</button>
+          <button onclick="cancelGroupEdit('${messageId}', '${escapeHtml(currentText)}')" class="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600">Cancel</button>
+        </div>
+      `;
+
+      // Focus on input and close dropdown
+      const input = messageTextDiv.querySelector('.edit-input');
+      input.focus();
+      input.select();
+
+      // Close dropdown
+      document.querySelectorAll('.dropdown-menu').forEach(menu => {
+        menu.classList.remove('show');
+      });
+    }
+
+    function handleGroupEditKeypress(event, messageId) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        saveGroupEdit(messageId);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+        const messageTextDiv = messageContainer.querySelector('.message-text');
+        const input = messageTextDiv.querySelector('.edit-input');
+        const originalText = input.defaultValue;
+        cancelGroupEdit(messageId, originalText);
+      }
+    }
+
+    async function saveGroupEdit(messageId) {
+      if (!messageId) {
+        console.error('Message ID is required');
+        return;
+      }
+
+      const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+      const messageTextDiv = messageContainer.querySelector('.message-text');
+      const input = messageTextDiv.querySelector('.edit-input');
+      const newText = input.value.trim();
+
+      if (!newText) {
+        alert('Message cannot be empty');
+        return;
+      }
+
+      try {
+        const response = await fetch(`/groupmessage/${messageId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ newMessage: newText })
+        });
+
+        if (response.ok) {
+          // Message will be updated via socket event
+        } else {
+          const error = await response.json();
+          alert('Error: ' + (error.error || 'Failed to edit message'));
+          // Restore original text
+          const originalText = input.defaultValue;
+          cancelGroupEdit(messageId, originalText);
+        }
+      } catch (error) {
+        console.error('Edit error:', error);
+        alert('Failed to edit message');
+        // Restore original text
+        const originalText = input.defaultValue;
+        cancelGroupEdit(messageId, originalText);
+      }
+    }
+
+    function cancelGroupEdit(messageId, originalText) {
+      const messageContainer = document.querySelector(`[data-id="${messageId}"]`);
+      const messageTextDiv = messageContainer.querySelector('.message-text');
+      const username = "<%= currentUser.username %>";
+      messageTextDiv.innerHTML = `<p class="text-sm leading-relaxed"><strong class="text-primary-100">${username}:</strong> ${escapeHtml(originalText)}</p>`;
+    }
+
+    // Handle group message deletion via socket
+    socket.on('group message deleted', ({ messageId, deleteType }) => {
+      try {
+        const messageElement = document.querySelector(`[data-id="${messageId}"]`);
+        if (messageElement) {
+          if (deleteType === 'forEveryone') {
+            messageElement.remove();
+          } else {
+            messageElement.remove();
+          }
+        }
+      } catch (error) {
+        console.error('Error handling group message deletion:', error);
+      }
+    });
+
+    // Handle group message editing via socket
+    socket.on('group message edited', (updatedMessage) => {
+      try {
+        const messageElement = document.querySelector(`[data-id="${updatedMessage._id}"]`);
+        if (messageElement) {
+          const messageTextDiv = messageElement.querySelector('.message-text');
+          const timeSpan = messageElement.querySelector('.text-xs');
+
+          if (messageTextDiv) {
+            messageTextDiv.innerHTML = `<p class="text-sm leading-relaxed"><strong class="text-primary-100">${updatedMessage.from.username}:</strong> ${escapeHtml(updatedMessage.msg)}</p>`;
+          }
+
+          // Update timestamp to show edited
+          if (timeSpan && !timeSpan.innerHTML.includes('(edited)')) {
+            timeSpan.innerHTML += ' <span class="ml-1 italic">(edited)</span>';
+          }
+        }
+      } catch (error) {
+        console.error('Error handling group message edit:', error);
+      }
+    });
 
     // Load available users when panel opens (only for admins)
     <% if (group.admin._id.toString() === currentUser._id.toString()) { %>

@@ -417,7 +417,13 @@ app.get('/groups/:id', async (req, res) => {
             return res.status(403).send('Not authorized');
         }
 
-        const chats = await GroupChat.find({ group: group._id })
+        const chats = await GroupChat.find({ 
+            group: group._id,
+            $and: [
+                { deletedForEveryone: { $ne: true } },
+                { deletedFor: { $ne: req.session.userId } }
+            ]
+        })
             .populate('from')
             .sort({ created_at: 1 });
             
@@ -592,6 +598,94 @@ app.post('/groups/:id/exit', async (req, res) => {
     } catch (error) {
         console.error('Exit group error:', error);
         res.status(500).json({ error: 'Error exiting group' });
+    }
+});
+
+// ----------- GROUP MESSAGE MANAGEMENT ROUTES -----------
+app.delete('/groupmessage/:messageId', async (req, res) => {
+    try {
+        if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+        
+        const { messageId } = req.params;
+        const { deleteType } = req.body;
+        const currentUserId = req.session.userId;
+        
+        const message = await GroupChat.findById(messageId).populate('group');
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+        
+        // Check if user is a member of the group
+        if (!message.group.members.includes(currentUserId)) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+        
+        if (message.from.toString() !== currentUserId) {
+            return res.status(403).json({ error: 'You can only delete your own messages' });
+        }
+        
+        if (deleteType === 'forEveryone') {
+            message.deletedForEveryone = true;
+            await message.save();
+            io.to(`group_${message.group._id}`).emit('group message deleted', { messageId, deleteType: 'forEveryone' });
+        } else {
+            if (!message.deletedFor.includes(currentUserId)) {
+                message.deletedFor.push(currentUserId);
+                await message.save();
+            }
+            io.to(currentUserId).emit('group message deleted', { messageId, deleteType: 'forMe' });
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete group message error:', error);
+        res.status(500).json({ error: 'Failed to delete message' });
+    }
+});
+
+app.put('/groupmessage/:messageId', async (req, res) => {
+    try {
+        if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+        
+        const { messageId } = req.params;
+        const { newMessage } = req.body;
+        const currentUserId = req.session.userId;
+        
+        const message = await GroupChat.findById(messageId).populate('group').populate('from');
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+        
+        // Check if user is a member of the group
+        if (!message.group.members.includes(currentUserId)) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+        
+        if (message.from._id.toString() !== currentUserId) {
+            return res.status(403).json({ error: 'You can only edit your own messages' });
+        }
+        
+        if (message.deletedForEveryone || message.deletedFor.includes(currentUserId)) {
+            return res.status(400).json({ error: 'Cannot edit deleted message' });
+        }
+        
+        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+        if (message.created_at < fifteenMinutesAgo) {
+            return res.status(400).json({ error: 'Message too old to edit (15 minute limit)' });
+        }
+        
+        if (!message.msg && message.media) {
+            return res.status(400).json({ error: 'Cannot edit media-only messages' });
+        }
+        
+        message.msg = newMessage;
+        message.edited = true;
+        message.editedAt = new Date();
+        await message.save();
+        
+        const updatedMessage = await GroupChat.findById(messageId).populate('from');
+        io.to(`group_${message.group._id}`).emit('group message edited', updatedMessage);
+        
+        res.json({ success: true, message: updatedMessage });
+    } catch (error) {
+        console.error('Edit group message error:', error);
+        res.status(500).json({ error: 'Failed to edit message' });
     }
 });
 
