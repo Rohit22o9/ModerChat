@@ -60,9 +60,9 @@ const configureUpload = (subfolder) => {
         }),
         limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
         fileFilter: (req, file, cb) => {
-            const filetypes = /jpeg|jpg|png|gif|mp4|mpeg|pdf/;
+            const filetypes = /jpeg|jpg|png|gif|mp4|mpeg|pdf|mp3|wav|ogg|webm|m4a/;
             const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-            const mimetype = filetypes.test(file.mimetype);
+            const mimetype = filetypes.test(file.mimetype) || file.mimetype.startsWith('audio/');
             if (extname && mimetype) {
                 return cb(null, true);
             }
