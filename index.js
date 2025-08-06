@@ -225,8 +225,9 @@ app.post('/chat/:id', mediaUpload.single('media'), async (req, res) => {
         const to = req.params.id;
         const msg = req.body.msg || '';
         const media = req.file ? `/media/${req.file.filename}` : null;
+        const originalName = req.file ? req.file.originalname : null;
 
-        const newChat = await Chat.create({ from, to, msg, media, status: 'sent' });
+        const newChat = await Chat.create({ from, to, msg, media, originalName, status: 'sent' });
         const decryptedChat = newChat.getDecrypted();
 
         io.to([from, to].sort().join('_')).emit('chat message', decryptedChat);
@@ -408,12 +409,14 @@ app.post('/groupchat/:id', mediaUpload.single('media'), async (req, res) => {
         const from = req.session.userId;
         const msg = req.body.msg || '';
         const media = req.file ? `/media/${req.file.filename}` : null;
+        const originalName = req.file ? req.file.originalname : null;
 
         const newChat = await GroupChat.create({ 
             group: req.params.id, 
             from, 
             msg, 
-            media 
+            media,
+            originalName 
         });
         
         const populatedChat = await newChat.populate('from');

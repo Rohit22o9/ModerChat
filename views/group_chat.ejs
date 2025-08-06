@@ -591,13 +591,13 @@
                   <polyline points="12 2 12 8 18 8"/>
                 </svg>
                 <div>
-                  <p class="font-semibold text-gray-800 text-sm truncate">${msg.originalName || msg.media.split('/').pop()}</p>
-                  <p class="text-xs text-gray-500 uppercase">Document</p>
+                  <p class="font-semibold text-gray-800 text-sm truncate max-w-xs">${msg.originalName || msg.media.split('/').pop()}</p>
+                  <p class="text-xs text-gray-500 uppercase">DOCUMENT</p>
                 </div>
               </div>
               <div class="flex space-x-3 mt-1">
                 <a href="${msg.media}" target="_blank" class="text-xs px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Open</a>
-                <a href="${msg.media}" download class="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600">Download</a>
+                <a href="${msg.media}" download="${msg.originalName || msg.media.split('/').pop()}" class="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600">Download</a>
               </div>
             </div>`;
         }

@@ -6,6 +6,7 @@ const chatSchema = new mongoose.Schema({
     to: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     msg: { type: String, required: false },
     media: String,
+    originalName: { type: String, default: null },
     status: { type: String, enum: ['sent', 'delivered', 'seen'], default: 'sent' },
     created_at: { type: Date, default: Date.now },
     // New fields for delete and edit functionality
