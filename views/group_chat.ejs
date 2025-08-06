@@ -333,6 +333,16 @@
       </aside>
     </div>
 
+    <!-- Media Preview -->
+    <div id="filePreview" class="hidden flex items-center justify-between p-3 bg-white/90 backdrop-blur-lg border border-secondary-200 rounded-xl mx-4 mb-2 shadow-lg">
+      <div id="previewContent" class="flex items-center space-x-3 flex-1"></div>
+      <button id="removeFile" type="button" class="ml-3 p-1 rounded-full hover:bg-secondary-100 text-secondary-500 hover:text-red-500 transition-colors">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+
     <!-- Voice Recording Preview -->
     <div id="voiceRecordingPreview" class="hidden voice-record-preview mx-4 mb-2">
       <button id="cancelRecording" class="voice-action-btn voice-delete-btn">
@@ -402,6 +412,10 @@
 
     const form = document.getElementById('chatForm');
     const chatBox = document.getElementById('chatBox');
+    const mediaInput = document.getElementById('mediaInput');
+    const filePreview = document.getElementById('filePreview');
+    const previewContent = document.getElementById('previewContent');
+    const removeFile = document.getElementById('removeFile');
     
     function scrollToBottom() { 
       chatBox.scrollTop = chatBox.scrollHeight; 
@@ -410,6 +424,108 @@
     function toggleGroupInfo() {
       document.getElementById('groupInfoPanel').classList.toggle('open');
     }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showFilePreview(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
+      const isVoice = ['webm','ogg','mp3','m4a','wav'].includes(ext);
+      const fileSize = formatFileSize(file.size);
+
+      if (isImage) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          previewContent.innerHTML = `
+            <div class="flex items-center space-x-3">
+              <img src="${e.target.result}" class="h-12 w-12 rounded-lg object-cover shadow border" alt="Preview" />
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-secondary-900 text-sm truncate">${escapeHtml(file.name)}</p>
+                <p class="text-xs text-secondary-500">Image • ${fileSize}</p>
+              </div>
+            </div>
+          `;
+        };
+        reader.readAsDataURL(file);
+      } else if (isVoice) {
+        previewContent.innerHTML = `
+          <div class="flex items-center space-x-3">
+            <div class="h-12 w-12 rounded-lg bg-green-100 flex items-center justify-center">
+              <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="font-medium text-secondary-900 text-sm truncate">${escapeHtml(file.name)}</p>
+              <p class="text-xs text-secondary-500">Audio • ${fileSize}</p>
+            </div>
+          </div>
+        `;
+      } else {
+        const extIconColor =
+          ext === 'pdf' ? 'text-red-500' :
+          ['doc','docx'].includes(ext) ? 'text-blue-600' :
+          ['xls','xlsx'].includes(ext) ? 'text-green-600' :
+          ['ppt','pptx'].includes(ext) ? 'text-orange-500' :
+          ['zip','rar'].includes(ext) ? 'text-yellow-500' : 'text-gray-600';
+
+        const extBgColor =
+          ext === 'pdf' ? 'bg-red-100' :
+          ['doc','docx'].includes(ext) ? 'bg-blue-100' :
+          ['xls','xlsx'].includes(ext) ? 'bg-green-100' :
+          ['ppt','pptx'].includes(ext) ? 'bg-orange-100' :
+          ['zip','rar'].includes(ext) ? 'bg-yellow-100' : 'bg-gray-100';
+
+        previewContent.innerHTML = `
+          <div class="flex items-center space-x-3">
+            <div class="h-12 w-12 rounded-lg ${extBgColor} flex items-center justify-center">
+              <svg class="w-6 h-6 ${extIconColor}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M12 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="12 2 12 8 18 8"/>
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="font-medium text-secondary-900 text-sm truncate">${escapeHtml(file.name)}</p>
+              <p class="text-xs text-secondary-500">${ext.toUpperCase()} Document • ${fileSize}</p>
+            </div>
+          </div>
+        `;
+      }
+      filePreview.classList.remove('hidden');
+    }
+
+    function hideFilePreview() {
+      filePreview.classList.add('hidden');
+      previewContent.innerHTML = '';
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    // Media preview handler
+    mediaInput.addEventListener('change', () => {
+      const file = mediaInput.files[0];
+      if (file) {
+        showFilePreview(file);
+      } else {
+        hideFilePreview();
+      }
+    });
+
+    // Remove file handler
+    removeFile.addEventListener('click', () => {
+      mediaInput.value = '';
+      hideFilePreview();
+    });
     
     scrollToBottom();
 
@@ -425,6 +541,7 @@
         
         if (response.ok) {
           form.reset();
+          hideFilePreview();
         }
       } catch (error) {
         console.error('Error sending message:', error);
