@@ -476,6 +476,79 @@ app.post('/groups/:id/update', groupIconUpload.single('icon'), async (req, res) 
 });
 
 // ----------- CALL ROUTES -----------
+app.post('/call/initiate/group', async (req, res) => {
+    try {
+        if (!req.session.userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        
+        const { groupId, type } = req.body;
+        
+        if (!groupId || !type || !['audio', 'video'].includes(type)) {
+            return res.status(400).json({ error: 'Invalid call parameters' });
+        }
+        
+        const group = await Group.findById(groupId).populate('members');
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
+        }
+        
+        if (!group.members.some(m => m._id.equals(req.session.userId))) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+        
+        const caller = await User.findById(req.session.userId);
+        const onlineMembers = group.members.filter(m => m.online && !m._id.equals(req.session.userId));
+        
+        if (onlineMembers.length === 0) {
+            return res.status(400).json({ error: 'No online members to call' });
+        }
+        
+        // Create call record for the group
+        const call = new Call({
+            caller: req.session.userId,
+            receiver: null, // No specific receiver for group calls
+            groupId: groupId,
+            type,
+            status: 'ringing'
+        });
+        
+        await call.save();
+        
+        // Notify all online group members except the caller
+        onlineMembers.forEach(member => {
+            io.to(member._id.toString()).emit('incoming-group-call', {
+                callId: call._id,
+                groupId: groupId,
+                groupName: group.name,
+                caller: {
+                    id: caller._id,
+                    username: caller.username,
+                    avatar: caller.avatar
+                },
+                type
+            });
+        });
+        
+        // Auto-end call after 30 seconds if no one joins
+        setTimeout(async () => {
+            const callCheck = await Call.findById(call._id);
+            if (callCheck && callCheck.status === 'ringing') {
+                callCheck.status = 'missed';
+                callCheck.endTime = new Date();
+                await callCheck.save();
+                
+                io.to(`group_${groupId}`).emit('group-call-timeout', { callId: call._id });
+            }
+        }, 30000);
+        
+        res.json({ success: true, callId: call._id });
+    } catch (error) {
+        console.error('Group call initiation error:', error);
+        res.status(500).json({ error: 'Failed to initiate group call' });
+    }
+});
+
 app.post('/call/initiate', async (req, res) => {
     try {
         if (!req.session.userId) {
@@ -566,6 +639,43 @@ app.post('/call/:callId/respond', async (req, res) => {
             return res.status(404).json({ error: 'Call not found' });
         }
         
+        // Handle group calls
+        if (call.groupId) {
+            const group = await Group.findById(call.groupId).populate('members');
+            if (!group.members.some(m => m._id.equals(req.session.userId))) {
+                return res.status(403).json({ error: 'Not authorized to respond to this group call' });
+            }
+            
+            if (call.status !== 'ringing') {
+                return res.status(400).json({ error: 'Call is no longer available' });
+            }
+            
+            if (action === 'accept') {
+                call.status = 'accepted';
+                if (!call.participants) call.participants = [];
+                if (!call.participants.includes(req.session.userId)) {
+                    call.participants.push(req.session.userId);
+                }
+                await call.save();
+                
+                const user = await User.findById(req.session.userId);
+                io.to(`group_${call.groupId}`).emit('group-call-joined', {
+                    callId: call._id,
+                    user: {
+                        id: user._id,
+                        username: user.username,
+                        avatar: user.avatar
+                    }
+                });
+                
+                res.json({ success: true, message: 'Joined group call' });
+            } else {
+                res.json({ success: true, message: 'Declined group call' });
+            }
+            return;
+        }
+        
+        // Handle personal calls
         if (call.receiver._id.toString() !== req.session.userId) {
             return res.status(403).json({ error: 'Not authorized to respond to this call' });
         }
@@ -617,6 +727,48 @@ app.post('/call/:callId/end', async (req, res) => {
             return res.status(404).json({ error: 'Call not found' });
         }
         
+        // Handle group calls
+        if (call.groupId) {
+            const group = await Group.findById(call.groupId).populate('members');
+            const isParticipant = call.caller.toString() === req.session.userId || 
+                                (call.participants && call.participants.includes(req.session.userId));
+            
+            if (!isParticipant) {
+                return res.status(403).json({ error: 'Not authorized to end this call' });
+            }
+            
+            // If caller ends the call, end it for everyone
+            if (call.caller.toString() === req.session.userId) {
+                call.status = 'ended';
+                call.endTime = new Date();
+                await call.save();
+                
+                io.to(`group_${call.groupId}`).emit('group-call-ended', {
+                    callId: call._id,
+                    reason: 'Ended by caller'
+                });
+            } else {
+                // Remove participant from call
+                if (call.participants) {
+                    call.participants = call.participants.filter(p => p.toString() !== req.session.userId);
+                    await call.save();
+                }
+                
+                const user = await User.findById(req.session.userId);
+                io.to(`group_${call.groupId}`).emit('group-call-left', {
+                    callId: call._id,
+                    user: {
+                        id: user._id,
+                        username: user.username
+                    }
+                });
+            }
+            
+            res.json({ success: true, message: 'Left group call' });
+            return;
+        }
+        
+        // Handle personal calls
         const isParticipant = call.caller.toString() === req.session.userId || 
                             call.receiver.toString() === req.session.userId;
         
@@ -802,6 +954,34 @@ io.on('connection', (socket) => {
             candidate: data.candidate,
             from: data.from,
             callId: data.callId
+        });
+    });
+
+    // Group call WebRTC signaling
+    socket.on('group-call-offer', (data) => {
+        socket.to(`group_${data.groupId}`).emit('group-call-offer', {
+            offer: data.offer,
+            from: data.from,
+            callId: data.callId,
+            groupId: data.groupId
+        });
+    });
+
+    socket.on('group-call-answer', (data) => {
+        socket.to(`group_${data.groupId}`).emit('group-call-answer', {
+            answer: data.answer,
+            from: data.from,
+            callId: data.callId,
+            groupId: data.groupId
+        });
+    });
+
+    socket.on('group-ice-candidate', (data) => {
+        socket.to(`group_${data.groupId}`).emit('group-ice-candidate', {
+            candidate: data.candidate,
+            from: data.from,
+            callId: data.callId,
+            groupId: data.groupId
         });
     });
 

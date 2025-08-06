@@ -176,5 +176,22 @@
       document.getElementById('groupInfoPanel').classList.toggle('open');
     });
   </script>
+<script src="/js/group-calls.js"></script>
+    <script>
+        // Set group ID for call functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.querySelector('.bg-white.shadow-lg');
+            if (container && !container.classList.contains('group-chat-container')) {
+                container.classList.add('group-chat-container');
+                container.dataset.groupId = '<%= group._id %>';
+            }
+            
+            // Add group header class if it doesn't exist
+            const header = document.querySelector('.flex.items-center.justify-between');
+            if (header && !header.classList.contains('group-header')) {
+                header.classList.add('group-header');
+            }
+        });
+    </script>
 </body>
 </html>
