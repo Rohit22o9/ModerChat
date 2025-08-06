@@ -17,7 +17,7 @@
 </head>
 <body class="flex flex-col h-screen">
   <!-- HEADER -->
-  <header class="flex items-center justify-between p-4 bg-white shadow cursor-pointer" id="groupHeader">
+  <header class="flex items-center justify-between p-4 bg-white shadow cursor-pointer group-header group-chat-container" id="groupHeader" data-group-id="<%= group._id %>">
     <div class="flex items-center space-x-3">
       <img src="<%= group.icon || '/group_icons/default.png' %>" class="w-10 h-10 rounded-full">
       <div>
@@ -25,6 +25,7 @@
         <p class="text-xs text-gray-500"><%= group.members.length %> members</p>
       </div>
     </div>
+    <!-- Call buttons will be added here by JavaScript -->
   </header>
 
   <!-- MAIN CONTAINER -->
@@ -177,21 +178,5 @@
     });
   </script>
 <script src="/js/group-calls.js"></script>
-    <script>
-        // Set group ID for call functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const container = document.querySelector('.bg-white.shadow-lg');
-            if (container && !container.classList.contains('group-chat-container')) {
-                container.classList.add('group-chat-container');
-                container.dataset.groupId = '<%= group._id %>';
-            }
-            
-            // Add group header class if it doesn't exist
-            const header = document.querySelector('.flex.items-center.justify-between');
-            if (header && !header.classList.contains('group-header')) {
-                header.classList.add('group-header');
-            }
-        });
-    </script>
 </body>
 </html>

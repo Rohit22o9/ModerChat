@@ -321,31 +321,40 @@ const groupCallManager = new GroupCallManager();
 
 // Add group call buttons to group chat interface
 document.addEventListener('DOMContentLoaded', function() {
-    const groupChatContainer = document.querySelector('.group-chat-container');
-    if (groupChatContainer) {
-        const groupId = groupChatContainer.dataset.groupId;
+    console.log('Group calls script loaded');
+    
+    const groupHeader = document.querySelector('.group-header');
+    console.log('Group header found:', groupHeader);
+    
+    if (groupHeader) {
+        const groupId = groupHeader.dataset.groupId;
+        console.log('Group ID:', groupId);
         
-        // Add call buttons to group header
-        const callButtons = document.createElement('div');
-        callButtons.className = 'flex space-x-2 ml-auto';
-        callButtons.innerHTML = `
-            <button onclick="groupCallManager.initiateGroupCall('${groupId}', 'audio')" 
-                    class="bg-green-500 text-white p-2 rounded-full hover:bg-green-600" title="Audio Call">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"></path>
-                </svg>
-            </button>
-            <button onclick="groupCallManager.initiateGroupCall('${groupId}', 'video')" 
-                    class="bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600" title="Video Call">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
-                </svg>
-            </button>
-        `;
-        
-        const groupHeader = document.querySelector('.group-header');
-        if (groupHeader) {
+        if (groupId) {
+            // Add call buttons to group header
+            const callButtons = document.createElement('div');
+            callButtons.className = 'flex space-x-2 ml-auto';
+            callButtons.innerHTML = `
+                <button onclick="groupCallManager.initiateGroupCall('${groupId}', 'audio')" 
+                        class="bg-green-500 text-white p-2 rounded-full hover:bg-green-600" title="Audio Call">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"></path>
+                    </svg>
+                </button>
+                <button onclick="groupCallManager.initiateGroupCall('${groupId}', 'video')" 
+                        class="bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600" title="Video Call">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
+                    </svg>
+                </button>
+            `;
+            
             groupHeader.appendChild(callButtons);
+            console.log('Call buttons added to group header');
+        } else {
+            console.error('Group ID not found');
         }
+    } else {
+        console.error('Group header not found');
     }
 });
